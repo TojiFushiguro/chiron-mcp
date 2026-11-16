@@ -159,6 +159,8 @@
   .flag-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
   .flag-head b { font-weight: 600; }
   .flag-head .btn { margin-left: auto; }
+  .flag-by { margin-top: 6px; color: var(--ink-2); }
+  .flag-by .lbl { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
   .flag-note { margin-top: 6px; color: var(--ink); white-space: pre-wrap; }
   .flag-q { margin-top: 6px; color: var(--ink-2); }
   .flag-q .lbl { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
@@ -173,6 +175,7 @@
   <nav class="tabs" id="tabs" role="tablist">
     <button type="button" role="tab" data-view="usage" aria-selected="true">Usage</button>
     <button type="button" role="tab" data-view="access" aria-selected="false" class="hide" id="tab-access">People &amp; access</button>
+    <button type="button" role="tab" data-view="flags" aria-selected="false" class="hide" id="tab-flags">Reported answers</button>
   </nav>
   <div class="who" id="who" hidden><b id="who-name"></b><small id="who-sub"></small></div>
 </header>
@@ -218,12 +221,16 @@
     <section class="card">
       <h2>Recent answers <span class="sub" id="recent-sub"></span></h2>
       <div class="scroll" id="recent"></div>
-    </section>
-    <section class="card hide" id="flags-card">
-      <h2>Reported answers <span class="sub" id="flags-sub"></span></h2>
-      <p class="sub" style="margin: 0 0 8px; color: var(--muted); font-size: 12.5px">What people flagged under an answer with "Report a problem": the question, the answer and why. Each one is a question kind to serve better or a bug to fix.</p>
-      <div class="scroll" id="flags"></div>
       <p class="note">One row per answer, with no question text and no results. The trace under an answer in Ask has those, for the person who asked, while the conversation lives.</p>
+    </section>
+  </section>
+
+  <!-- ======================= Reported answers ======================= -->
+  <section class="view hide" id="view-flags">
+    <section class="card" id="flags-card">
+      <h2>Reported answers <span class="sub" id="flags-sub"></span></h2>
+      <p class="sub" style="margin: 0 0 10px; color: var(--muted); font-size: 12.5px">What people flagged under an answer with "Report a problem": who, when, on which dataset, the question, the answer and why. Each one is a question kind to serve better or a bug to fix.</p>
+      <div id="flags"></div>
     </section>
   </section>
 
@@ -258,6 +265,7 @@ try {
   const q = new URLSearchParams(location.search);
   FILTER_USER = q.get('user') || null;
   if (q.get('view') === 'access') VIEW = 'access';
+  if (q.get('view') === 'flags') VIEW = 'flags';
 } catch (_) {}
 
 // ---- helpers ------------------------------------------------------------------------
@@ -321,6 +329,7 @@ function showView(v) {
   VIEW = v;
   $('view-usage').classList.toggle('hide', v !== 'usage');
   $('view-access').classList.toggle('hide', v !== 'access');
+  $('view-flags').classList.toggle('hide', v !== 'flags');
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -348,11 +357,12 @@ function renderTiles(d) {
 // ---- reported answers -------------------------------------------------------------------
 const FLAG_WORDS = { wrong: 'Wrong figure or answer', incomplete: 'Incomplete', could_not: 'Could not do it', other: 'Something else' };
 function renderFlags(d) {
-  const card = $('flags-card'), box = $('flags'), rows = d.flags || [];
-  card.classList.toggle('hide', !d.everyone);
+  const tab = $('tab-flags'), box = $('flags'), rows = d.flags || [];
+  tab.classList.toggle('hide', !d.everyone);
   if (!d.everyone) return;
   box.textContent = '';
   const open = rows.filter(f => f.status !== 'handled').length;
+  tab.textContent = 'Reported answers' + (open ? ' · ' + open : '');
   $('flags-sub').textContent = rows.length ? (open + ' open · ' + rows.length + ' in all') : '';
   if (!rows.length) { box.appendChild(el('div', 'empty', 'Nothing reported yet.')); return; }
   const list = el('div', 'flags');
@@ -360,7 +370,7 @@ function renderFlags(d) {
     const item = el('div', 'flag' + (f.status === 'handled' ? ' handled' : ''));
     const head = el('div', 'flag-head');
     head.appendChild(el('b', '', FLAG_WORDS[f.kind] || f.kind || 'Reported'));
-    head.appendChild(el('span', 'dim', ' · ' + person(f.user) + ' · ' + (f.dataset || '–') + ' · ' + when(f.at) + (f.model ? ' · ' + shortModel(f.model) : '')));
+    head.appendChild(el('span', 'dim', ' · ' + when(f.at) + ' · ' + (f.dataset || '–') + (f.model ? ' · ' + shortModel(f.model) : '')));
     const btn = el('button', 'btn small', f.status === 'handled' ? 'Reopen' : 'Mark handled'); btn.type = 'button';
     btn.onclick = async () => {
       btn.disabled = true;
@@ -372,6 +382,14 @@ function renderFlags(d) {
     };
     head.appendChild(btn);
     item.appendChild(head);
+    // who reported it: their name, and the username and email the account carries
+    const p = PEOPLE[f.user] || {};
+    const by = el('div', 'flag-by');
+    by.appendChild(el('span', 'lbl', 'Reported by '));
+    by.appendChild(el('b', '', p.name || f.user || '–'));
+    const ids = [p.name ? f.user : '', p.email].filter(Boolean).join(' · ');
+    if (ids) by.appendChild(el('span', 'dim', ' (' + ids + ')'));
+    item.appendChild(by);
     if (f.note) item.appendChild(el('div', 'flag-note', f.note));
     if (f.text_withheld) {
       item.appendChild(el('div', 'flag-q dim', 'The question and the answer are shown to superusers only.'));
