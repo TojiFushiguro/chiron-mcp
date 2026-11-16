@@ -958,7 +958,7 @@ function renderShare(msg, bad) {
     name.textContent = pers.name || pers.username;
     if (pers.name && pers.name !== pers.username) { name.appendChild(document.createTextNode(' ')); name.appendChild(el('small', null, pers.username)); }
     const cont = el('label', 'cont');
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!pers.write; cb.disabled = !pers.identical;
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!pers.write; cb.disabled = !pers.identical && !pers.write;
     cont.title = pers.identical ? 'Let this person ask follow-ups in this conversation' : 'Their permissions on this dataset differ from yours, so they can read but not continue';
     cb.onchange = async () => { cb.disabled = true; const r = await shareWith(chat, pers.username, false, cb.checked); renderShare(r.error || ((cb.checked ? 'Can continue: ' : 'Read-only: ') + (pers.name || pers.username) + '.'), !!r.error); };
     cont.append(cb, document.createTextNode('can continue'));
@@ -1065,12 +1065,17 @@ async function refreshTurns(chat) {
   catch (_) { d = null; }
   chat.loading = false;
   if (!d || d.error || !Array.isArray(d.turns)) {
-    if (firstLoad) {
+    if (firstLoad || (chat.readonly && d && d.error)) {
+      // a colleague's conversation no longer shared with this person leaves the screen
+      if (chat.readonly && d && d.error) { chat.turns = []; chat.remote = true; }
       chat.loadError = (d && d.error) || 'The conversation could not be read from the Ask server.';
       if (activeId === chat.id) renderThread();
     }
     return;
   }
+  // The server knows nothing of a conversation this browser still holds answers of (a
+  // registry entry whose traces predate tracing): what is here stays here.
+  if (!d.turns.length && chat.turns.length && !chat.readonly) { chat.loading = false; return; }
   if (busy && busy.chatId === chat.id) return;
   const byTrace = new Map(chat.turns.filter(t => t.trace && t.trace.id).map(t => [t.trace.id, t]));
   const before = JSON.stringify(chat.turns.map(t => [t.withheld || t.q, (t.answer || '').length, t.by || '']));
@@ -1083,6 +1088,16 @@ async function refreshTurns(chat) {
              followups: local ? local.followups : null, flagged: local ? local.flagged : null,
              by: t.by || null, byName: t.by_name || null, copied: !!t.copied };
   });
+  if (!chat.readonly) {
+    // own answers the server has no trace of (given before tracing existed) are kept;
+    // one the server holds back is known to it (its id is the trace id) and stays held back
+    const known = new Set(d.turns.map(t => (t.trace && t.trace.id) || t.id).filter(Boolean));
+    const orphans = Array.from(byTrace.entries()).filter(([id]) => !known.has(id)).map(([, t]) => t)
+      .concat(chat.turns.filter(t => !(t.trace && t.trace.id) && !t.withheld && t.answer && !t.copied));
+    const have = new Set(chat.turns.map(t => t.id));
+    orphans.forEach(t => { if (!have.has(t.id)) chat.turns.push(t); });
+    chat.turns.sort((a, b) => (a.at || 0) - (b.at || 0));
+  }
   const after = JSON.stringify(chat.turns.map(t => [t.withheld || t.q, (t.answer || '').length, t.by || '']));
   const first = chat.turns.find(t => !t.withheld);
   if (first && !chat.clonedFrom && !d.cloned_from) chat.title = titleFor(first.q);

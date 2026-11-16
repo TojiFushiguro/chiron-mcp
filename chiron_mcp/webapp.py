@@ -944,8 +944,13 @@ def gated_turns(entry: dict, tid: str, viewer: str) -> tuple[list[dict], int]:
         by = t.get("by") or owner
         level = t.get("access_level") or access_now(by)[0]
         details = t.get("details") if t.get("details") is not None else access_now(by)[1]
-        if may_view(level, details, viewer_level, viewer_details):
-            item = {k: v for k, v in t.items() if k not in ("access_level", "details")}
+        # One's own conversation is read under "at least" whatever the share rule: a
+        # person whose access was raised keeps what was asked in it before (by them, or
+        # by a colleague who could continue it then); one whose access was reduced does
+        # not. The share rule is for reading a colleague's conversation.
+        rule = "at_least" if (viewer == owner or (by == viewer and not t.get("copied"))) else None
+        if may_view(level, details, viewer_level, viewer_details, rule):
+            item = dict(t, access_level=level, details=bool(details))
             if by != viewer or t.get("copied"):
                 item["by"] = by
                 item["by_name"] = t.get("by_name") or display_name(by)
@@ -1540,7 +1545,8 @@ class _Threads:
         self._path = _state_dir() / "threads.json"
         self._guard = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
-        self._running: dict[str, tuple] = {}  # tid -> (claude process, its outcome)
+        self._running: dict[str, tuple] = {}  # tid -> (claude process, its outcome, user, since)
+        self._claims: dict[str, tuple] = {}   # tid -> (user, since) while they hold the lock
         try:
             self._data = json.loads(self._path.read_text())
         except (OSError, ValueError):
@@ -1646,16 +1652,29 @@ class _Threads:
                  "identical": identical_access(t.get("dataset"), t.get("user"), u)}
                 for u in (t.get("shared") or [])]
 
+    def claim(self, tid: str, user: str | None) -> None:
+        """Note who holds a conversation's lock (from before the model starts until the
+        answer ends); None releases the note."""
+        import time
+
+        with self._guard:
+            if user is None:
+                self._claims.pop(tid, None)
+            else:
+                self._claims[tid] = (user, time.time())
+
     def busy(self, tid: str) -> dict | None:
         """Who is being answered in a conversation right now, if anyone."""
         with self._guard:
             entry = self._running.get(tid)
-        if not entry:
-            return None
-        proc, _outcome, user, since = entry
-        if proc.poll() is not None:
-            return None
-        return {"user": user, "name": display_name(user), "since": since}
+            claim = self._claims.get(tid)
+        if entry:
+            proc, _outcome, user, since = entry
+            if proc.poll() is None:
+                return {"user": user, "name": display_name(user), "since": since}
+        if claim:
+            return {"user": claim[0], "name": display_name(claim[0]), "since": claim[1]}
+        return None
 
     def clone(self, tid: str, viewer: str, seed: list[dict], title: str | None) -> str:
         """A copy of a conversation for `viewer`, holding the turns they could see as its
@@ -2181,6 +2200,15 @@ def ask_stream(
         if not lock.acquire(timeout=20):
             yield "error", "Still answering your previous question in this conversation."
             return
+    THREADS.claim(tid, username)
+    if entry and gated_turns(entry, tid, username)[1]:
+        # An answer in it was given at a higher access level than this person has now,
+        # and the model's context still holds it: not continued, whoever they are.
+        THREADS.claim(tid, None)
+        lock.release()
+        yield "error", ("Some answers in this conversation were given at a higher access level than "
+                        "you have on this dataset now, so it cannot be continued. Start a new conversation.")
+        return
 
     # The tools this person gets: the list, plus the aggregate-safe breakdown for an
     # aggregate-only account. Both the MCP server and the CLI's allow-list must agree,
@@ -2257,12 +2285,14 @@ def ask_stream(
                 continue
             if resume:
                 # The transcript is gone (expired, or cleared elsewhere): start this
-                # question as a fresh conversation rather than failing it.
+                # question as a fresh conversation rather than failing it. A copy of a
+                # colleague's conversation keeps its id, so its seed is not lost.
                 resume = False
-                tid = str(uuid.uuid4())
-                trace.restarted(tid)
-                yield from _drain(trace)
-                yield "thread", tid
+                if not (entry and entry.get("seed")):
+                    tid = str(uuid.uuid4())
+                    trace.restarted(tid)
+                    yield from _drain(trace)
+                    yield "thread", tid
                 continue
             if outcome.get("stderr"):
                 message = explain_claude_error(outcome["stderr"][:500])
@@ -2301,6 +2331,7 @@ def ask_stream(
                        "finished.", status="warn")
             trace.finish(outcome.get("rc"), outcome.get("stderr", ""))
             trace.save(_trace_root())
+        THREADS.claim(tid, None)
         lock.release()
         try:
             cfg.unlink()
@@ -2803,19 +2834,13 @@ class Handler(BaseHTTPRequestHandler):
         for t in turns:
             if t.get("withheld") or not (t.get("q") or t.get("answer")):
                 continue
-            by = t.get("by") or (who if not t.get("copied") else entry.get("user"))
+            by = t.get("by") or who
+            # the level each copied turn was answered at travels with it, for the gate later
             seed.append({"id": t.get("id"), "q": t.get("q"), "answer": t.get("answer"), "at": t.get("at"),
                          "by": by, "by_name": t.get("by_name") or display_name(by),
-                         "access_level": access_of(entry.get("dataset"), by)[0] if not t.get("access_level") else t.get("access_level"),
-                         "details": t.get("details")})
-        # the level each copied turn was answered at travels with it, for the gate later
-        originals = {x.get("id"): x for x in tracing.turns(_trace_root(), tid, None)}
-        for item in seed:
-            src = originals.get(item["id"]) or {}
-            if src.get("access_level"):
-                item["access_level"] = src["access_level"]
-            if src.get("details") is not None:
-                item["details"] = src["details"]
+                         "access_level": t.get("access_level"), "details": t.get("details")})
+        if not seed:
+            return self._json({"error": "Nothing of this conversation is visible to you now, so there is nothing to copy."})
         new_id = THREADS.clone(tid, who, seed, None)
         new = THREADS.entry(new_id) or {}
         print(f"clone: {tid} -> {new_id} for {who} ({len(seed)} turns)", file=sys.stderr, flush=True)

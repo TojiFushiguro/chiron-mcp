@@ -78,6 +78,46 @@ def offline() -> None:
     check("[gate] identical: the same level and right", mv("deid", True, "deid", True, "identical"))
     check("[gate] no access reads nothing", not mv("deid", False, None, False, "at_least") and not mv(None, False, "phi", True, "at_least"))
 
+    # gated_turns: the turns of a conversation as each person may see them now, with a
+    # stand-in access table and stand-in traces.
+    access = {"owner": ("phi", True), "down": ("deid", False), "peer": ("deid", False), "agg": ("agg", False), "none": (None, False)}
+    traces = [
+        {"id": "t1", "q": "q1", "answer": "a1", "at": 1, "by": "owner", "access_level": "deid", "details": False, "trace": {"id": "t1"}},
+        {"id": "t2", "q": "q2", "answer": "a2", "at": 2, "by": "owner", "access_level": "phi", "details": True, "trace": {"id": "t2"}},
+        {"id": "t3", "q": "q3", "answer": "a3", "at": 3, "by": "peer", "access_level": "deid", "details": False, "trace": {"id": "t3"}},
+    ]
+    entry = {"user": "owner", "dataset": "ds", "writers": ["peer"], "shared": ["peer", "down", "agg"],
+             "seed": [{"id": "s0", "q": "q0", "answer": "a0", "at": 0, "by": "someone", "by_name": "Someone", "access_level": "phi", "details": True}]}
+    saved = (W.access_of, tracing.turns, W.SHARE_RULE, W.display_name)
+    W.access_of = lambda dataset, user: access.get(user, (None, False))
+    tracing.turns = lambda root, tid, users: [dict(t) for t in traces]
+    W.display_name = lambda u: (u or "").title()
+    try:
+        def shown(viewer, rule="at_least"):
+            W.SHARE_RULE = rule
+            turns, withheld = W.gated_turns(entry, "tid", viewer)
+            return [t.get("id") for t in turns if not t.get("withheld")], withheld
+        check("[gated] the owner (phi, details) sees everything, their own turns with their traces, the peer's without",
+              shown("owner") == (["s0", "t1", "t2", "t3"], 0)
+              and all(("trace" in t) == (t.get("by") is None) for t in W.gated_turns(entry, "tid", "owner")[0] if not t.get("copied")))
+        check("[gated] a peer at deid reads the deid turns and not the phi one, the copied phi turn held back too",
+              shown("peer") == (["t1", "t3"], 2))
+        check("[gated] an aggregate-only reader gets everything held back", shown("agg") == ([], 4))
+        check("[gated] no access on the dataset: everything held back", shown("none") == ([], 4))
+        check("[gated] under 'identical' a peer still reads the deid turns (same level and right)", shown("peer", "identical") == (["t1", "t3"], 2))
+        check("[gated] under 'identical' the owner (phi) still reads their own deid turn: own turns are 'at least'",
+              shown("owner", "identical") == (["s0", "t1", "t2", "t3"], 0))
+        access["owner"] = ("deid", False)
+        check("[gated] the owner reduced to deid loses their phi turn, keeps the deid ones", shown("owner") == (["t1", "t3"], 2))
+        access["owner"] = ("phi", True)
+        check("[gated] each turn carries the level it was answered at", all(t.get("access_level") for t in W.gated_turns(entry, "tid", "owner")[0] if not t.get("withheld")))
+        check("[gated] a turn held back keeps its place with a note and no text",
+              all(not t.get("q") and not t.get("answer") and t.get("withheld") for t in W.gated_turns(entry, "tid", "agg")[0]))
+        check("[role] a writer whose permissions match the owner's is a writer; one whose differ is a reader",
+              W.identical_access("ds", "owner", "peer") is False and W.identical_access("ds", "down", "peer") is True)
+    finally:
+        W.access_of, tracing.turns, W.SHARE_RULE, W.display_name = saved
+
     with tempfile.TemporaryDirectory() as tmp:
         old_state, old_ttl = W._state_dir, W.THREAD_TTL_HOURS
         W._state_dir = lambda: Path(tmp)
@@ -348,6 +388,11 @@ def collaboration(me: str, tid: str, trace_id: str) -> None:
             check(f"{tag} nor their traces", "error" in r and "higher access level" in r["error"], r.get("error", "")[:80])
             item = next((t for t in E.get_json(f"{E.ASK}/threads?dataset={E.DS}", twin).get("shared") or [] if t["thread"] == tid), None)
             check(f"{tag} the colleague, no longer identical, may no longer continue", bool(item) and item.get("can_write") is False, item and item.get("can_write"))
+            ev_d = E.ask("And how many are men?", me, E.DS, tid)
+            check(f"{tag} the reduced owner cannot continue it either: refused, not answered, not restarted",
+                  "error" in ev_d and "higher access level" in str(ev_d.get("error")) and not ev_d.get("answer") and not ev_d.get("thread"), (ev_d.get("error") or "")[:100])
+            r = E.post_json(f"{E.ASK}/clone", {"thread": tid}, me)
+            check(f"{tag} nor copy it (nothing of it is visible to them now)", "error" in r and "nothing to copy" in r["error"], r)
         finally:
             cu.access_level = old; cu.save()
         v = E.get_json(f"{E.ASK}/threads?thread={tid}", me)
