@@ -212,7 +212,8 @@ def unmasked_small(text: str) -> list[str]:
     t = text or ""
     cells = re.findall(r"\|\s*([1-5])\s*\|", t)
     # "fewer than 5 patients" and "under 5 patients" are the mask in words, not a count.
-    worded = re.findall(r"(?<![<\w.,$])(?<!than )(?<!under )(?<!below )(?<!up to )(?<!least )"
+    # "1 to 5 patients" and "from 1 to 5" are the mask's range in words, not a count.
+    worded = re.findall(r"(?<![<\w.,$])(?<!than )(?<!under )(?<!below )(?<!up to )(?<!least )(?<!to )(?<!from )"
                         r"([1-5])\s+(?:patients?|people|subjects?|individuals?|persons?)\b", t)
     return cells + worded
 

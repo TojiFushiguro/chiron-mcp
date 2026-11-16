@@ -886,33 +886,93 @@ def access_of(dataset: str | None, username: str | None) -> tuple[str | None, bo
         return None, False
 
 
-def shared_turns(entry: dict, tid: str, viewer: str) -> tuple[list[dict], int]:
-    """A shared conversation's turns for a viewer, each only if the viewer's access on
-    that dataset is at least the level it was answered at and the viewer may see
-    identifying columns whenever its owner may. A turn held back keeps its place, with
-    a note instead of the question and the answer, so the reader knows it is there."""
+# Who may read an answer someone else asked, or one they asked themselves when they had
+# more access than now: "at_least" (the reader's access on the dataset is at least the
+# level it was answered at, and identifying columns only if the reader may see them) or
+# "identical" (the same level and the same identifying-column right). Continuing a
+# colleague's conversation always needs identical permissions, whatever the rule.
+SHARE_RULE = (os.environ.get("CHIRON_MCP_SHARE_RULE") or "at_least").strip().lower()
+if SHARE_RULE not in ("at_least", "identical"):
+    SHARE_RULE = "at_least"
+WITHHELD = ("This question was answered at a higher access level than yours on this dataset, "
+            "so it is not shown.")
+
+
+def may_view(level: str | None, details, viewer_level: str | None, viewer_details: bool,
+             rule: str | None = None) -> bool:
+    """Whether someone with (viewer_level, viewer_details) on a dataset may read an
+    answer given at (level, details), under the share rule."""
     from chiron_mcp.config import ACCESS_ORDER
 
+    if viewer_level not in ACCESS_ORDER or level not in ACCESS_ORDER:
+        return False
+    if (rule or SHARE_RULE) == "identical":
+        return viewer_level == level and bool(viewer_details) == bool(details)
+    return ACCESS_ORDER.index(viewer_level) >= ACCESS_ORDER.index(level) and (bool(viewer_details) or not details)
+
+
+def identical_access(dataset: str | None, a: str | None, b: str | None) -> bool:
+    la, da = access_of(dataset, a)
+    lb, db = access_of(dataset, b)
+    return la is not None and la == lb and bool(da) == bool(db)
+
+
+def gated_turns(entry: dict, tid: str, viewer: str) -> tuple[list[dict], int]:
+    """A conversation's turns for a viewer (its owner, a colleague who may continue it,
+    or a reader), each only if the viewer's access on the dataset allows it now: the
+    level it was answered at and whether identifying columns were allowed are kept in
+    the trace, so a person who lost access since loses the answers too. Turns of a
+    conversation copied from a colleague's (its seed) are gated the same way. A turn
+    held back keeps its place, with a note instead of the question and the answer. The
+    trace of a turn stays with the person who asked it."""
     owner = entry.get("user")
     dataset = entry.get("dataset")
-    owner_level, owner_details = access_of(dataset, owner)
+    participants = {owner} | set(entry.get("writers") or [])
     viewer_level, viewer_details = access_of(dataset, viewer)
+    now: dict = {}
+
+    def access_now(user):
+        if user not in now:
+            now[user] = access_of(dataset, user)
+        return now[user]
+
+    turns = [dict(t, copied=True) for t in (entry.get("seed") or []) if isinstance(t, dict)]
+    turns += tracing.turns(_trace_root(), tid, participants)
+    turns.sort(key=lambda t: t.get("at") or 0)
     out, withheld = [], 0
-    for t in tracing.turns(_trace_root(), tid, owner):
-        level = t.get("access_level") or owner_level
-        details = t.get("details") if t.get("details") is not None else owner_details
-        ok = (viewer_level in ACCESS_ORDER and level in ACCESS_ORDER
-              and ACCESS_ORDER.index(viewer_level) >= ACCESS_ORDER.index(level)
-              and (viewer_details or not details))
-        if ok:
-            # the trace stays with the person who asked
-            out.append({k: v for k, v in t.items() if k not in ("trace", "access_level", "details")})
+    for t in turns:
+        by = t.get("by") or owner
+        level = t.get("access_level") or access_now(by)[0]
+        details = t.get("details") if t.get("details") is not None else access_now(by)[1]
+        if may_view(level, details, viewer_level, viewer_details):
+            item = {k: v for k, v in t.items() if k not in ("access_level", "details")}
+            if by != viewer or t.get("copied"):
+                item["by"] = by
+                item["by_name"] = t.get("by_name") or display_name(by)
+                item.pop("trace", None)
+            else:
+                item.pop("by", None)
+                item.pop("by_name", None)
+            out.append(item)
         else:
             withheld += 1
-            out.append({"id": t.get("id"), "at": t.get("at"), "withheld": (
-                "This question was answered at a higher access level than yours on this dataset, "
-                "so it is not shown.")})
+            out.append({"id": t.get("id"), "at": t.get("at"), "withheld": WITHHELD, "copied": bool(t.get("copied"))})
     return out, withheld
+
+
+def seed_note(entry: dict) -> str:
+    """The copied conversation, for the model's context when its new owner asks the first
+    question of their copy: the questions and answers they could see when they cloned it."""
+    seed = [t for t in (entry.get("seed") or []) if isinstance(t, dict) and t.get("answer")]
+    if not seed:
+        return ""
+    lines = [f"This conversation was copied from one that {display_name(entry.get('cloned_by') or '')} "
+             f"shared. Its questions and answers so far, as context only; they were answered at "
+             "that time, so every figure you give must still come from a tool now:"]
+    for t in seed[-12:]:
+        lines.append(f"Q: {str(t.get('q') or '').strip()[:500]}")
+        lines.append(f"A: {str(t.get('answer') or '').strip()[:1500]}")
+    return "\n".join(lines)
 
 
 # Who may see everyone's usage and who has what access: Django superusers, and the
@@ -1492,17 +1552,41 @@ class _Threads:
         tmp.chmod(0o600)
         tmp.replace(self._path)
 
+    def role(self, tid: str | None, user: str, dataset: str | None = None) -> str | None:
+        """What `user` is to a conversation: "owner", "writer" (a colleague who may continue
+        it: named by the owner, and with identical permissions on its dataset now),
+        "reader", or None. With `dataset`, the conversation must be on that dataset."""
+        if not tid:
+            return None
+        with self._guard:
+            t = self._data.get(tid)
+            if not t or (dataset is not None and t.get("dataset") != dataset):
+                return None
+            t = dict(t)
+        if t.get("user") == user:
+            return "owner"
+        if user in (t.get("writers") or []):
+            return "writer" if identical_access(t.get("dataset"), t.get("user"), user) else "reader"
+        if user in (t.get("shared") or []):
+            return "reader"
+        return None
+
     def valid(self, tid: str | None, user: str, dataset: str | None) -> bool:
+        """Whether `user` may continue the conversation: its owner, or a colleague who may
+        write in it, while it is not expired."""
         import time
 
-        if not tid:
+        if self.role(tid, user, dataset) not in ("owner", "writer"):
             return False
         with self._guard:
             t = self._data.get(tid)
-            return bool(
-                t and t["user"] == user and t.get("dataset") == dataset
-                and (THREAD_TTL_HOURS is None or time.time() - t["last"] < THREAD_TTL_HOURS * 3600)
-            )
+            return bool(t and (THREAD_TTL_HOURS is None or time.time() - t["last"] < THREAD_TTL_HOURS * 3600))
+
+    def answered(self, tid: str) -> bool:
+        """Whether a conversation has a transcript to resume (an answer was given in it)."""
+        with self._guard:
+            t = self._data.get(tid)
+            return bool(t and int(t.get("turns") or 0) > 0)
 
     def touch(self, tid: str, user: str, dataset: str | None,
               cohort: dict | None = None, question: str | None = None) -> None:
@@ -1516,11 +1600,16 @@ class _Threads:
         with self._guard:
             prev = self._data.get(tid) or {}
             title = prev.get("title") or (question or "").strip()[:160] or None
-            self._data[tid] = {"user": user, "dataset": dataset, "last": time.time(),
-                               "cohort": cohort or prev.get("cohort"),
-                               "title": title, "turns": int(prev.get("turns") or 0) + (1 if question else 0),
-                               "first": prev.get("first") or time.time(),
-                               "shared": list(prev.get("shared") or [])}
+            entry = {"user": prev.get("user") or user, "dataset": dataset, "last": time.time(),
+                     "cohort": cohort or prev.get("cohort"),
+                     "title": title, "turns": int(prev.get("turns") or 0) + (1 if question else 0),
+                     "first": prev.get("first") or time.time(),
+                     "shared": list(prev.get("shared") or []), "writers": list(prev.get("writers") or []),
+                     "last_by": user}
+            for key in ("seed", "cloned_from", "cloned_by"):
+                if prev.get(key):
+                    entry[key] = prev[key]
+            self._data[tid] = entry
             self._save()
 
     def mine(self, user: str, dataset: str | None = None) -> list[dict]:
@@ -1543,31 +1632,77 @@ class _Threads:
                             self._save()
             out.append({"thread": tid, "dataset": t.get("dataset"), "title": t.get("title"),
                         "turns": int(t.get("turns") or 0), "last": t.get("last"), "first": t.get("first") or t.get("last"),
-                        "shared_with": [{"username": u, "name": display_name(u)} for u in (t.get("shared") or [])],
+                        "shared_with": self._people(t),
+                        "cloned_from": t.get("cloned_from"), "busy": self.busy(tid),
                         "expired": bool(THREAD_TTL_HOURS is not None
                                         and time.time() - (t.get("last") or 0) >= THREAD_TTL_HOURS * 3600)})
         return sorted(out, key=lambda x: -(x["last"] or 0))
+
+    @staticmethod
+    def _people(t: dict) -> list[dict]:
+        """Who a conversation is shared with, and whether each may continue it."""
+        writers = set(t.get("writers") or [])
+        return [{"username": u, "name": display_name(u), "write": u in writers,
+                 "identical": identical_access(t.get("dataset"), t.get("user"), u)}
+                for u in (t.get("shared") or [])]
+
+    def busy(self, tid: str) -> dict | None:
+        """Who is being answered in a conversation right now, if anyone."""
+        with self._guard:
+            entry = self._running.get(tid)
+        if not entry:
+            return None
+        proc, _outcome, user, since = entry
+        if proc.poll() is not None:
+            return None
+        return {"user": user, "name": display_name(user), "since": since}
+
+    def clone(self, tid: str, viewer: str, seed: list[dict], title: str | None) -> str:
+        """A copy of a conversation for `viewer`, holding the turns they could see as its
+        seed; their first question starts a new transcript with that seed as context."""
+        import time
+        import uuid
+
+        new_id = str(uuid.uuid4())
+        with self._guard:
+            src = self._data.get(tid) or {}
+            self._data[new_id] = {"user": viewer, "dataset": src.get("dataset"), "last": time.time(),
+                                  "cohort": None, "title": title or ("Copy of " + str(src.get("title") or "a conversation"))[:160],
+                                  "turns": 0, "first": time.time(), "shared": [], "writers": [],
+                                  "seed": seed, "cloned_from": tid, "cloned_by": src.get("user")}
+            self._save()
+        return new_id
 
     def entry(self, tid: str) -> dict | None:
         with self._guard:
             t = self._data.get(tid)
             return dict(t) if t else None
 
-    def share(self, tid: str, owner: str, username: str, remove: bool = False) -> list[str] | None:
+    def share(self, tid: str, owner: str, username: str, remove: bool = False,
+              write: bool | None = None) -> list[dict] | None:
         """Add a person to (or take them off) a conversation's share list; the owner only.
-        None when the conversation is not theirs."""
+        `write` True lets them continue it (the caller has checked their permissions are
+        identical), False makes them a reader again, None leaves that as it is. None when
+        the conversation is not the owner's."""
         with self._guard:
             t = self._data.get(tid)
             if not t or t.get("user") != owner:
                 return None
-            current = list(t.get("shared") or [])
+            readers = list(t.get("shared") or [])
+            writers = list(t.get("writers") or [])
             if remove:
-                current = [u for u in current if u != username]
-            elif username not in current:
-                current.append(username)
-            t["shared"] = current
+                readers = [u for u in readers if u != username]
+                writers = [u for u in writers if u != username]
+            else:
+                if username not in readers:
+                    readers.append(username)
+                if write is True and username not in writers:
+                    writers.append(username)
+                elif write is False:
+                    writers = [u for u in writers if u != username]
+            t["shared"], t["writers"] = readers, writers
             self._save()
-            return list(current)
+            return self._people(t)
 
     def shared_with(self, user: str, dataset: str | None = None) -> list[dict]:
         """Conversations other people shared with this person, newest first."""
@@ -1580,19 +1715,20 @@ class _Threads:
         out = [{"thread": tid, "dataset": t.get("dataset"), "title": t.get("title") or "Conversation",
                 "turns": int(t.get("turns") or 0), "last": t.get("last"), "first": t.get("first") or t.get("last"),
                 "owner": t.get("user"), "owner_name": display_name(t.get("user")),
+                "write": user in (t.get("writers") or []),
+                "can_write": user in (t.get("writers") or []) and identical_access(t.get("dataset"), t.get("user"), user),
+                "busy": self.busy(tid),
                 "expired": bool(THREAD_TTL_HOURS is not None
                                 and time.time() - (t.get("last") or 0) >= THREAD_TTL_HOURS * 3600)}
                for tid, t in items]
         return sorted(out, key=lambda x: -(x["last"] or 0))
 
     def turns(self, tid: str, user: str) -> list[dict] | None:
-        """The answers of one of a person's conversations, from its traces; None when the
-        conversation is not theirs or does not exist."""
-        with self._guard:
-            t = self._data.get(tid)
-        if not t or t.get("user") != user:
+        """The answers of a conversation as `user` may see them now (gated_turns); None
+        when they have no part in it."""
+        if self.role(tid, user) is None:
             return None
-        return tracing.turns(_trace_root(), tid, user)
+        return gated_turns(self.entry(tid), tid, user)[0]
 
     def cohort(self, tid: str) -> dict | None:
         with self._guard:
@@ -1602,9 +1738,11 @@ class _Threads:
         with self._guard:
             return self._locks.setdefault(tid, threading.Lock())
 
-    def started(self, tid: str, proc, outcome: dict) -> None:
+    def started(self, tid: str, proc, outcome: dict, user: str | None = None) -> None:
+        import time
+
         with self._guard:
-            self._running[tid] = (proc, outcome)
+            self._running[tid] = (proc, outcome, user, time.time())
 
     def finished(self, tid: str, proc) -> None:
         with self._guard:
@@ -1617,7 +1755,7 @@ class _Threads:
             entry = self._running.get(tid)
         if not entry:
             return False
-        proc, outcome = entry
+        proc, outcome = entry[0], entry[1]
         outcome["cancelled"] = True
         if proc.poll() is None:
             proc.kill()
@@ -1801,7 +1939,7 @@ def _claude_turn(cmd: list[str], username: str, allow_superuser: bool, outcome: 
     tracker = _CohortTracker()
     tool_numbers: set[int] = set()
     outcome.update(answered=False, rc=None, stderr="")
-    THREADS.started(tid, proc, outcome)
+    THREADS.started(tid, proc, outcome, username)
     lines: queue.Queue = queue.Queue()
     threading.Thread(target=_pump, args=(proc.stdout, lines), daemon=True).start()
     deadline = time.monotonic() + TURN_SECONDS
@@ -2019,13 +2157,26 @@ def ask_stream(
     env = model_env(model)
 
     THREADS.prune()
-    resume = THREADS.valid(thread, username, dataset)
-    tid = thread if resume else str(uuid.uuid4())
+    # The conversation is continued when it is this person's own, or a colleague's who let
+    # them write in it (identical permissions, checked now); a copy of a colleague's
+    # conversation keeps its id but starts a new transcript, seeded with what was copied.
+    known = THREADS.valid(thread, username, dataset)
+    tid = thread if known else str(uuid.uuid4())
+    resume = known and THREADS.answered(tid)
+    entry = THREADS.entry(tid) if known else None
+    participants = ({entry.get("user")} | set(entry.get("writers") or [])) if entry else {username}
     lock = THREADS.lock(tid)
     if not lock.acquire(blocking=False):
-        # The page asks one question at a time, so another one in the same conversation
-        # (only its owner can resume it) means the earlier answer was abandoned: the
-        # page was reloaded or stopped while it was stuck. Stop it and go on.
+        running = THREADS.busy(tid)
+        if running and running.get("user") not in (None, username):
+            # Several people may write in one conversation, one at a time: a colleague's
+            # answer in flight is theirs to wait for, never stopped.
+            yield "error", (f"{running.get('name') or 'A colleague'} is being answered in this conversation "
+                            "right now. Wait for that answer, then ask.")
+            return
+        # The page asks one question at a time, so another one of this person's in the
+        # same conversation means the earlier answer was abandoned: the page was
+        # reloaded or stopped while it was stuck. Stop it and go on.
         THREADS.stop(tid)
         if not lock.acquire(timeout=20):
             yield "error", "Still answering your previous question in this conversation."
@@ -2044,7 +2195,7 @@ def ask_stream(
         if TRACE:
             trace = tracing.Trace(
                 question=question, dataset=dataset, user=username, thread=tid, followup=resume,
-                prior=tracing.prior(_trace_root(), tid, username) if resume else [],
+                prior=tracing.prior(_trace_root(), tid, participants) if resume else [],
                 inherited=THREADS.cohort(tid) if resume else None, redact=_redact,
                 groups=_groups_dict(tid) if resume else None, access_level=level, details=details)
             yield "trace_start", trace.head()
@@ -2063,6 +2214,8 @@ def ask_stream(
                     except Exception as exc:  # noqa: BLE001
                         # No access: let the model meet the same refusal and say so.
                         prompt = f"[dataset: {dataset}]\n\n{question}\n\n(Access check: {exc})"
+                if entry and entry.get("seed"):
+                    prompt += "\n\n" + seed_note(entry)
                 session = ["--session-id", tid]
 
             inherited = THREADS.cohort(tid) if resume else None
@@ -2282,6 +2435,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._forget()
         if url.path == "/share":
             return self._share()
+        if url.path == "/clone":
+            return self._clone()
         if url.path == "/flag":
             return self._flag()
         if url.path == "/usage/access":
@@ -2330,7 +2485,7 @@ class Handler(BaseHTTPRequestHandler):
         who, allow_su = request_identity(self.headers.get("Cookie"))
         dataset = (parse_qs(urlparse(self.path).query).get("dataset") or [None])[0]
         out: dict = {"identity": who, "user": None, "datasets": [], "suggestions": [],
-                     "models": offered_models(), "model": default_model()}
+                     "models": offered_models(), "model": default_model(), "share_rule": SHARE_RULE}
         if not who:
             out["error"] = NOT_LOGGED_IN
             return self._json(out)
@@ -2564,28 +2719,30 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": NOT_LOGGED_IN})
         tid = (params.get("thread") or [None])[0]
         if tid:
+            role = THREADS.role(tid, who)
             entry = THREADS.entry(tid)
-            if entry and entry.get("user") == who:
-                turns = THREADS.turns(tid, who)
-                return self._json({"thread": tid, "turns": turns or [], "mine": True, "owner": who,
-                                   "owner_name": display_name(who), "title": entry.get("title"),
-                                   "dataset": entry.get("dataset"),
-                                   "shared_with": [{"username": u, "name": display_name(u)} for u in (entry.get("shared") or [])]})
-            if entry and who in (entry.get("shared") or []):
-                turns, withheld = shared_turns(entry, tid, who)
-                return self._json({"thread": tid, "turns": turns, "mine": False, "read_only": True,
-                                   "owner": entry.get("user"), "owner_name": display_name(entry.get("user")),
-                                   "title": entry.get("title"), "dataset": entry.get("dataset"),
-                                   "withheld": withheld})
-            return self._json({"error": "No such conversation of yours."})
+            if not role or not entry:
+                return self._json({"error": "No such conversation of yours."})
+            turns, withheld = gated_turns(entry, tid, who)
+            out = {"thread": tid, "turns": turns, "role": role, "mine": role == "owner",
+                   "read_only": role == "reader", "can_write": role in ("owner", "writer"),
+                   "owner": entry.get("user"), "owner_name": display_name(entry.get("user")),
+                   "title": entry.get("title"), "dataset": entry.get("dataset"), "withheld": withheld,
+                   "busy": THREADS.busy(tid), "cloned_from": entry.get("cloned_from"),
+                   "cloned_by_name": display_name(entry.get("cloned_by")) if entry.get("cloned_from") else None,
+                   "share_rule": SHARE_RULE}
+            if role == "owner":
+                out["shared_with"] = THREADS._people(entry)
+            return self._json(out)
         dataset = (params.get("dataset") or [None])[0] or None
         shared = [t for t in THREADS.shared_with(who, dataset) if access_of(t["dataset"], who)[0]]
-        return self._json({"identity": who, "ttl_hours": THREAD_TTL_HOURS,
+        return self._json({"identity": who, "ttl_hours": THREAD_TTL_HOURS, "share_rule": SHARE_RULE,
                            "threads": THREADS.mine(who, dataset), "shared": shared})
 
     def _share(self):
-        """POST {"thread", "with": username or email, "remove"?}: the owner lets one more
-        person read a conversation (never follow it up), or takes them off again."""
+        """POST {"thread", "with": username or email, "remove"?, "write"?}: the owner lets
+        one more person read a conversation, lets them continue it too ("write", only
+        with identical permissions on the dataset), or takes them off again."""
         if not self._same_site() or not self._origin_ok():
             return self._json({"error": "Refused: request came from an untrusted origin."})
         body = self._body()
@@ -2610,10 +2767,59 @@ class Handler(BaseHTTPRequestHandler):
                                         "email exactly as Chiron knows it."})
         if account.username == who:
             return self._json({"error": "That is you."})
-        shared = THREADS.share(tid, who, account.username, remove=bool(body.get("remove")))
+        write = body.get("write")
+        if write is not None:
+            write = bool(write)
+        if write and not identical_access(entry.get("dataset"), who, account.username):
+            la, da = access_of(entry.get("dataset"), who)
+            lb, db = access_of(entry.get("dataset"), account.username)
+            words = lambda lv, d: (("no access" if not lv else lv) + (" with identifying columns" if d else ""))  # noqa: E731
+            return self._json({"error": f"{display_name(account.username)} can read it but not continue it: continuing a "
+                                        f"conversation needs identical permissions on this dataset, and theirs are "
+                                        f"{words(lb, db)} against your {words(la, da)}."})
+        shared = THREADS.share(tid, who, account.username, remove=bool(body.get("remove")), write=write)
         if shared is None:
             return self._json({"error": "No such conversation of yours."})
-        return self._json({"thread": tid, "shared_with": [{"username": u, "name": display_name(u)} for u in shared]})
+        return self._json({"thread": tid, "shared_with": shared})
+
+    def _clone(self):
+        """POST {"thread"}: a copy of a conversation for the person asking, with the turns
+        they may see as its seed, so they continue it as their own, at their own access."""
+        if not self._same_site() or not self._origin_ok():
+            return self._json({"error": "Refused: request came from an untrusted origin."})
+        body = self._body()
+        if body is None:
+            return self._json({"error": "Body must be JSON."})
+        who, _ = request_identity(self.headers.get("Cookie"))
+        if not who:
+            return self._json({"error": NOT_LOGGED_IN})
+        tid = str(body.get("thread") or "")
+        role = THREADS.role(tid, who)
+        entry = THREADS.entry(tid)
+        if not role or not entry:
+            return self._json({"error": "No such conversation of yours."})
+        turns, _withheld = gated_turns(entry, tid, who)
+        seed = []
+        for t in turns:
+            if t.get("withheld") or not (t.get("q") or t.get("answer")):
+                continue
+            by = t.get("by") or (who if not t.get("copied") else entry.get("user"))
+            seed.append({"id": t.get("id"), "q": t.get("q"), "answer": t.get("answer"), "at": t.get("at"),
+                         "by": by, "by_name": t.get("by_name") or display_name(by),
+                         "access_level": access_of(entry.get("dataset"), by)[0] if not t.get("access_level") else t.get("access_level"),
+                         "details": t.get("details")})
+        # the level each copied turn was answered at travels with it, for the gate later
+        originals = {x.get("id"): x for x in tracing.turns(_trace_root(), tid, None)}
+        for item in seed:
+            src = originals.get(item["id"]) or {}
+            if src.get("access_level"):
+                item["access_level"] = src["access_level"]
+            if src.get("details") is not None:
+                item["details"] = src["details"]
+        new_id = THREADS.clone(tid, who, seed, None)
+        new = THREADS.entry(new_id) or {}
+        print(f"clone: {tid} -> {new_id} for {who} ({len(seed)} turns)", file=sys.stderr, flush=True)
+        return self._json({"thread": new_id, "title": new.get("title"), "turns": len(seed), "dataset": new.get("dataset")})
 
     def _flag(self):
         """POST {"trace", "kind", "note"?}: the person who asked reports an answer. The
@@ -2663,7 +2869,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": ok, "flags": usage.flags(200)})
 
     def _trace(self, params):
-        """One answer's full trace, for the person who asked it (see trace.py)."""
+        """One answer's full trace, for the person who asked it (see trace.py), as long as
+        their access on the dataset still allows what it holds."""
         who, _ = request_identity(self.headers.get("Cookie"))
         data = tracing.find(_trace_root(), (params.get("id") or [""])[0], who)
         if data is None:
@@ -2672,6 +2879,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": (
                 f"No trace for this answer. Traces are kept {kept}, and only for the person "
                 "who asked.")})
+        level, details = access_of(data.get("dataset"), who)
+        if data.get("access_level") and not may_view(data.get("access_level"), data.get("details"), level, details):
+            return self._json({"error": "This answer was given at a higher access level than yours on this "
+                                        "dataset now, so its trace is not shown."})
         return self._json(data)
 
     def _ask(self, params):

@@ -1091,15 +1091,35 @@ something, or gave only part of it (a phrase check on the answer at finish, no t
 `limited` in the row, the "Said it could not" tile on the page). A rising count is the early
 warning; the reports say what.
 
-**Sharing a conversation, and a PDF of it.** The owner of a conversation can let colleagues
-read it ("Share" in the Ask top bar, by Chiron username or email; `POST /share {"thread",
-"with", "remove"?}`). It appears in their sidebar under "Shared with me", read-only, no
-follow-ups. Each answer is shown only if the reader's access on that dataset is at least the
-level it was answered at (kept in the trace) and the reader may see identifying columns whenever
-the owner may; otherwise it is held back with a note. The traces stay with the owner. "Export
-PDF" opens the conversation by itself in a new tab (`?view=<conversation>&print=1`, the same
-read-only view, with a print stylesheet) and prints it once the charts are drawn; the browser's
-print dialog saves it as a PDF.
+**Sharing a conversation, continuing it, copying it, and a PDF of it.** The owner of a
+conversation can let colleagues read it ("Share" in the Ask top bar, by Chiron username or
+email; `POST /share {"thread", "with", "remove"?, "write"?}`). It appears in their sidebar
+under "Shared with me". Each answer is shown only if the reader's access on that dataset
+allows it under the share rule (`CHIRON_MCP_SHARE_RULE`): `at_least`, the default, means
+the reader's level is at least the level the answer was given at (kept in the trace, with
+whether identifying columns were allowed) and identifying columns only if the reader may see
+them; `identical` means the same level and the same right. Otherwise the turn is held back
+with a note, question and answer both. The same gate runs every time anyone opens any
+conversation, their own included: a person whose access was reduced no longer sees the
+answers given when they had more, nor their traces, and the page drops its local copy of
+them. A sharer's questions are shown as typed, so the sharer decides who gets them.
+
+"Can continue" (`"write": true`) lets a colleague ask follow-ups in the conversation. It is
+allowed only between people with identical permissions on the dataset, checked when it is
+granted and again at every question, because the model's context holds the earlier answers.
+One person is answered at a time: a question while a colleague's answer is in flight is
+refused with their name, and the page shows who is being answered. Each turn says who asked
+it; its trace, its cost and its "Report a problem" stay with that person; the conversation's
+running cost is one line whoever asked.
+
+"Clone" (`POST /clone {"thread"}`) copies a conversation into one of the reader's own, with
+the turns they could see as its seed; their first question starts a new transcript with that
+seed as context, answered at their own access level, and the copied turns are gated like any
+other if their access changes later.
+
+"Export PDF" opens the conversation by itself in a new tab (`?view=<conversation>&print=1`,
+the same read-only view, with a print stylesheet) and prints it once the charts are drawn;
+the browser's print dialog saves it as a PDF.
 
 ## Troubleshooting
 

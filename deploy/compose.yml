@@ -99,6 +99,11 @@ services:
       CHIRON_MCP_ASK_MODELS: ${ASK_MODELS:-}
       # A Django group whose members see everyone's usage at /ask/usage, as superusers do.
       CHIRON_MCP_USAGE_GROUP: ${ASK_USAGE_GROUP:-}
+      # Who may read a shared answer (and one's own, after an access change): at_least
+      # (the reader's access on the dataset is at least the level it was answered at)
+      # or identical (the same level and identifying-column right). Continuing a
+      # colleague's conversation always needs identical permissions.
+      CHIRON_MCP_SHARE_RULE: ${ASK_SHARE_RULE:-at_least}
       # A model server of your own instead of Anthropic or Bedrock (Ollama, or LiteLLM in
       # front of vLLM and the like): its address and, if it wants one, a token. Both
       # unset: the Claude login or the Bedrock settings in your override apply. See

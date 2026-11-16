@@ -162,6 +162,10 @@
   }
   .banner b { font-weight: 600; }
   .withheld { font-size: 13px; color: var(--muted); background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; }
+  .by-line { font-size: 11.5px; color: var(--muted); text-align: right; margin-bottom: -10px; }
+  .by-line.copied { text-align: left; }
+  .popover label.cont { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .popover label.cont input { margin: 0; }
   /* reporting an answer */
   .feedback { margin-top: 8px; font-size: 12px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
   .feedback .link-btn { color: var(--faint); text-decoration: none; }
@@ -570,6 +574,10 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
         Share
       </button>
+      <button class="top-btn" id="clone-btn" type="button" hidden title="Copy this conversation into one of your own and continue it there, at your own access level">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Clone
+      </button>
       <button class="top-btn" id="export-btn" type="button" title="Open a printable copy of this conversation and save it as a PDF">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg>
         Export PDF
@@ -667,7 +675,9 @@ const storeKey = () => `chiron-ask:v2:${ME || 'anon'}:${DATASET}`;
 // Conversations colleagues shared with this person, read-only; never saved in this
 // browser (the server lists them), so they are kept apart from `chats`.
 let SHARED = [];
+let SHARE_RULE = 'at_least';   // who may read a shared answer: at least the sharer's access, or identical
 const activeChat = () => chats.find(c => c.id === activeId) || SHARED.find(c => c.id === activeId) || null;
+const canWrite = c => !!c && !c.view && !c.expired && (!c.readonly || c.write);
 
 function load() {
   try {
@@ -852,7 +862,7 @@ function renderSidebar() {
       open.appendChild(el('span', 'title', c.title));
       const meta = el('span', 'meta');
       meta.appendChild(el('span', 'by', 'by ' + (c.ownerName || c.owner || 'a colleague')));
-      meta.appendChild(document.createTextNode(' · ' + when(c.updated) + ' · read-only'));
+      meta.appendChild(document.createTextNode(' · ' + when(c.updated) + (c.write ? ' · you can continue' : ' · read-only')));
       open.appendChild(meta);
       open.onclick = () => selectChat(c.id);
       if (c.id === activeId) open.setAttribute('aria-current', 'true');
@@ -872,6 +882,8 @@ function selectChat(id) {
   renderThread();
   updateComposer();
   qBox.focus();
+  const c = activeChat();
+  if (c && c.thread && c.turns.length) refreshTurns(c);
 }
 // Share and Export PDF: for the open conversation once the server knows it. Sharing
 // is the owner's; a shared conversation can be exported but not shared on.
@@ -882,9 +894,31 @@ function renderTopTools() {
   $('top-tools').hidden = !show;
   if (!show) { closeShare(); return; }
   $('share-btn').hidden = !!chat.readonly;
+  $('clone-btn').hidden = !chat.readonly;
   const n = (chat.sharedWith || []).length;
   $('share-btn').lastChild.textContent = n ? ` Shared · ${n}` : ' Share';
 }
+// Clone: a copy of a colleague's conversation becomes one of mine, with the answers I
+// could see in it as context; my questions in it are answered at my own access level.
+$('clone-btn').onclick = async () => {
+  const chat = activeChat(); if (!chat || !chat.thread) return;
+  $('clone-btn').disabled = true;
+  let r = null;
+  try {
+    r = await fetch('clone', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                               body: JSON.stringify({ thread: chat.thread }) }).then(x => x.json());
+  } catch (_) { r = { error: 'The Ask server could not be reached.' }; }
+  $('clone-btn').disabled = false;
+  if (!r || r.error || !r.thread) {
+    threadEl.appendChild(el('div', 'err', (r && r.error) || 'The conversation could not be copied.'));
+    return;
+  }
+  const now = Date.now();
+  const copy = { id: uid(), title: titleFor(r.title || ('Copy of ' + chat.title)), created: now, updated: now,
+                 thread: r.thread, turns: [], count: r.turns || 0, remote: true, clonedFrom: chat.thread, sharedWith: [] };
+  chats.unshift(copy);
+  selectChat(copy.id);
+};
 let SHARE_OPEN = false;
 function closeShare() {
   SHARE_OPEN = false;
@@ -898,8 +932,11 @@ function renderShare(msg, bad) {
   pop.hidden = false;
   $('share-btn').setAttribute('aria-expanded', 'true');
   pop.appendChild(el('h3', null, 'Share this conversation'));
-  pop.appendChild(el('p', null, 'The person reads it in their own Ask sidebar under "Shared with me", without follow-ups. ' +
-    'Each answer shows only if their access on this dataset is at least yours; otherwise it is held back.'));
+  pop.appendChild(el('p', null, 'The person reads it in their own Ask sidebar under "Shared with me". ' +
+    (SHARE_RULE === 'identical'
+      ? 'Each answer shows only if their permissions on this dataset are identical to yours at the time it was answered; otherwise it is held back. '
+      : 'Each answer shows only if their access on this dataset is at least yours at the time it was answered; otherwise it is held back. ') +
+    'Your questions are shown as you typed them. "Can continue" lets a person with identical permissions ask follow-ups in it, one person at a time.'));
   const row = el('div', 'row');
   const input = el('input'); input.type = 'text'; input.placeholder = 'Chiron username or email'; input.setAttribute('aria-label', 'Chiron username or email');
   const add = el('button', 'mini-btn', 'Add'); add.type = 'button';
@@ -920,9 +957,14 @@ function renderShare(msg, bad) {
     const name = el('span');
     name.textContent = pers.name || pers.username;
     if (pers.name && pers.name !== pers.username) { name.appendChild(document.createTextNode(' ')); name.appendChild(el('small', null, pers.username)); }
+    const cont = el('label', 'cont');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!pers.write; cb.disabled = !pers.identical;
+    cont.title = pers.identical ? 'Let this person ask follow-ups in this conversation' : 'Their permissions on this dataset differ from yours, so they can read but not continue';
+    cb.onchange = async () => { cb.disabled = true; const r = await shareWith(chat, pers.username, false, cb.checked); renderShare(r.error || ((cb.checked ? 'Can continue: ' : 'Read-only: ') + (pers.name || pers.username) + '.'), !!r.error); };
+    cont.append(cb, document.createTextNode('can continue'));
     const rm = el('button', 'mini-btn', 'Remove'); rm.type = 'button';
     rm.onclick = async () => { rm.disabled = true; const r = await shareWith(chat, pers.username, true); renderShare(r.error || ('No longer shared with ' + (pers.name || pers.username) + '.'), !!r.error); };
-    li.append(name, rm);
+    li.append(name, cont, rm);
     list.appendChild(li);
   });
   if (!(chat.sharedWith || []).length) list.appendChild(el('li', 'msg', 'Not shared with anyone yet.'));
@@ -930,11 +972,13 @@ function renderShare(msg, bad) {
   if (msg) pop.appendChild(el('div', 'msg' + (bad ? ' bad' : ''), msg));
   if (!msg) setTimeout(() => input.focus(), 0);
 }
-async function shareWith(chat, who, remove) {
+async function shareWith(chat, who, remove, write) {
   let r = null;
+  const body = { thread: chat.thread, with: who, remove: !!remove };
+  if (write !== undefined) body.write = !!write;
   try {
     r = await fetch('share', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                               body: JSON.stringify({ thread: chat.thread, with: who, remove: !!remove }) }).then(x => x.json());
+                               body: JSON.stringify(body) }).then(x => x.json());
   } catch (_) { r = { error: 'The Ask server could not be reached.' }; }
   if (r && !r.error && Array.isArray(r.shared_with)) { chat.sharedWith = r.shared_with; save(); renderTopTools(); }
   return r || { error: 'No answer from the Ask server.' };
@@ -974,6 +1018,8 @@ async function syncThreads() {
     if (have) {
       const mine = JSON.stringify(have.sharedWith || []), theirs = JSON.stringify(t.shared_with || []);
       if (mine !== theirs) { have.sharedWith = t.shared_with || []; changed = true; }
+      const b = t.busy && t.busy.user !== ME ? t.busy : null;
+      if (JSON.stringify(have.busy || null) !== JSON.stringify(b)) { have.busy = b; changed = true; }
       return;
     }
     chats.push({ id: uid(), title: titleFor(t.title || 'Conversation'), created: (t.first || t.last || 0) * 1000,
@@ -988,9 +1034,10 @@ async function syncThreads() {
     const prev = SHARED.find(c => c.thread === t.thread && !c.view);
     keep.push(Object.assign(prev || { id: 'shared:' + t.thread, turns: [], readonly: true, thread: t.thread }, {
       title: titleFor(t.title || 'Conversation'), updated: (t.last || 0) * 1000, created: (t.first || t.last || 0) * 1000,
-      owner: t.owner, ownerName: t.owner_name, count: t.turns || 0, expired: !!t.expired }));
+      owner: t.owner, ownerName: t.owner_name, count: t.turns || 0, expired: !!t.expired,
+      write: !!t.can_write, busy: t.busy && t.busy.user !== ME ? t.busy : null }));
   });
-  if (JSON.stringify(keep.map(c => [c.id, c.title, c.updated])) !== JSON.stringify(SHARED.map(c => [c.id, c.title, c.updated]))) changed = true;
+  if (JSON.stringify(keep.map(c => [c.id, c.title, c.updated, c.write, !!c.busy])) !== JSON.stringify(SHARED.map(c => [c.id, c.title, c.updated, c.write, !!c.busy]))) changed = true;
   SHARED = keep;
   if (changed) {
     save(); renderSidebar(); renderTopTools();
@@ -1000,30 +1047,70 @@ async function syncThreads() {
 }
 async function loadTurns(chat) {
   if (!chat || !chat.thread || chat.turns.length || chat.loading) return;
-  chat.loading = true; chat.loadError = ''; renderThread();
+  return refreshTurns(chat);
+}
+// The server is the authority on what a conversation holds and what this person may
+// see of it now: every open re-reads it, so an answer given when the person had more
+// access, or a colleague's answer above theirs, is held back the moment access changes,
+// and a colleague's new turns appear. What this browser keeps (the Query button, the
+// suggestions, a report) is carried over by the answer's trace id.
+async function refreshTurns(chat) {
+  if (!chat || !chat.thread || chat.loading) return;
+  if (busy && busy.chatId === chat.id) return;   // not while this tab is being answered in it
+  const firstLoad = !chat.turns.length;
+  chat.loading = true; chat.loadError = '';
+  if (firstLoad) renderThread();
   let d = null;
-  try { d = await fetch('threads?thread=' + encodeURIComponent(chat.thread)).then(r => r.json()); }
+  try { d = await fetch('threads?thread=' + encodeURIComponent(chat.thread), { cache: 'no-store' }).then(r => r.json()); }
   catch (_) { d = null; }
   chat.loading = false;
   if (!d || d.error || !Array.isArray(d.turns)) {
-    chat.loadError = (d && d.error) || 'The conversation could not be read from the Ask server.';
-    if (activeId === chat.id) renderThread();
+    if (firstLoad) {
+      chat.loadError = (d && d.error) || 'The conversation could not be read from the Ask server.';
+      if (activeId === chat.id) renderThread();
+    }
     return;
   }
-  chat.turns = d.turns.slice(-MAX_TURNS).map(t => t.withheld
-    ? { id: uid(), withheld: t.withheld, at: t.at || chat.updated, steps: [], pending: false }
-    : { id: uid(), q: t.q || '', answer: t.answer || '', cohort: null, link: null, error: t.error || '',
-        steps: [], pending: false, at: t.at || chat.updated, fresh: !!t.fresh, trace: t.trace || null, restored: true });
+  if (busy && busy.chatId === chat.id) return;
+  const byTrace = new Map(chat.turns.filter(t => t.trace && t.trace.id).map(t => [t.trace.id, t]));
+  const before = JSON.stringify(chat.turns.map(t => [t.withheld || t.q, (t.answer || '').length, t.by || '']));
+  chat.turns = d.turns.slice(-MAX_TURNS).map(t => {
+    if (t.withheld) return { id: uid(), withheld: t.withheld, at: t.at || chat.updated, steps: [], pending: false, copied: !!t.copied };
+    const local = t.trace && t.trace.id ? byTrace.get(t.trace.id) : null;
+    return { id: local ? local.id : uid(), q: t.q || '', answer: t.answer || '', cohort: local ? local.cohort : null,
+             link: local ? local.link : null, error: t.error || '', steps: [], pending: false, at: t.at || chat.updated,
+             fresh: !!t.fresh, trace: t.trace || (local && local.trace) || null, restored: !local,
+             followups: local ? local.followups : null, flagged: local ? local.flagged : null,
+             by: t.by || null, byName: t.by_name || null, copied: !!t.copied };
+  });
+  const after = JSON.stringify(chat.turns.map(t => [t.withheld || t.q, (t.answer || '').length, t.by || '']));
   const first = chat.turns.find(t => !t.withheld);
-  if (first) chat.title = titleFor(first.q);
+  if (first && !chat.clonedFrom && !d.cloned_from) chat.title = titleFor(first.q);
   else if (d.title) chat.title = titleFor(d.title);
-  if (d.read_only) { chat.readonly = true; chat.owner = d.owner; chat.ownerName = d.owner_name; chat.withheld = d.withheld || 0; }
+  chat.role = d.role || (d.mine ? 'owner' : 'reader');
+  chat.readonly = chat.role !== 'owner' || !!chat.view;
+  chat.write = chat.role === 'writer';
+  chat.owner = d.owner; chat.ownerName = d.owner_name; chat.withheld = d.withheld || 0;
+  chat.busy = d.busy && d.busy.user !== ME ? d.busy : null;
+  if (d.cloned_from) { chat.clonedFrom = d.cloned_from; chat.clonedByName = d.cloned_by_name || chat.clonedByName; }
   if (Array.isArray(d.shared_with)) chat.sharedWith = d.shared_with;
   chat.remote = false;
-  if (!chat.readonly) save();
+  if (chat.role === 'owner') save();
   renderSidebar(); renderTopTools();
-  if (activeId === chat.id) { renderThread(); updateComposer(); if (PRINT && chat.view) printWhenDrawn(); }
+  if (activeId === chat.id) {
+    if (firstLoad || before !== after) renderThread();
+    updateComposer();
+    if (PRINT && chat.view) printWhenDrawn();
+  }
 }
+// A conversation others may write in, or one being answered for a colleague, is
+// re-read every few seconds while it is open, so their turns and the lock show up.
+setInterval(() => {
+  const c = activeChat();
+  if (!c || !c.thread || busy || document.hidden || PRINT) return;
+  const shared = c.readonly || (c.sharedWith || []).some(p => p.write) || c.busy;
+  if (shared && !c.view) refreshTurns(c);
+}, 8000);
 function newChat() {
   confirming = null;
   pickStarters();
@@ -1071,7 +1158,7 @@ function renderThread() {
     return;
   }
   if (!chat || !chat.turns.length) { threadEl.appendChild(hero()); scroller.scrollTop = 0; $('to-bottom').hidden = true; return; }
-  if (chat.readonly || chat.view) threadEl.appendChild(banner(chat));
+  if (chat.readonly || chat.view || chat.clonedFrom) threadEl.appendChild(banner(chat));
   chat.turns.forEach(t => threadEl.appendChild(turnNode(t)));
   if (chat.expired && !chat.readonly) {
     threadEl.appendChild(el('div', 'note',
@@ -1085,12 +1172,14 @@ function renderThread() {
 function banner(chat) {
   const wrap = el('div', 'banner'), box = el('div');
   const bits = [];
-  if (chat.readonly && chat.ownerName) bits.push(['Shared by', chat.ownerName]);
-  else if (chat.view && ME) bits.push(['Asked by', (WHO && WHO.name) || ME]);
+  if (chat.readonly && chat.ownerName && !chat.view) bits.push(['Shared by', chat.ownerName]);
+  else if (chat.view && ME) bits.push(['Asked by', chat.ownerName || (WHO && WHO.name) || ME]);
+  else if (chat.clonedFrom) bits.push(['Copied from', (chat.clonedByName || 'a colleague') + '\'s conversation']);
   bits.push(['Dataset', DATASET_NAME]);
   const last = chat.turns.length ? chat.turns[chat.turns.length - 1].at : chat.updated;
   if (last) bits.push(['Last answer', new Date(last).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })]);
-  bits.push([chat.turns.filter(t => !t.withheld).length + ' question' + (chat.turns.length === 1 ? '' : 's'), chat.readonly ? 'read-only' : 'Ask Chiron']);
+  bits.push([chat.turns.filter(t => !t.withheld).length + ' question' + (chat.turns.length === 1 ? '' : 's'),
+             chat.view ? 'Ask Chiron' : chat.write ? 'you can continue, one person at a time' : chat.readonly ? 'read-only' : 'your copy']);
   bits.forEach(([k, v]) => { const sp = el('span'); sp.appendChild(el('b', null, k + ': ')); sp.appendChild(document.createTextNode(v)); box.appendChild(sp); });
   if (chat.withheld) box.appendChild(el('span', null, chat.withheld + ' answer' + (chat.withheld === 1 ? '' : 's') + ' held back (above your access level)'));
   wrap.appendChild(box);
@@ -1125,6 +1214,12 @@ function turnNode(turn) {
   const wrap = el('div', 'turn');
   wrap.dataset.turn = turn.id;
   if (turn.withheld) { wrap.appendChild(el('div', 'withheld', turn.withheld)); return wrap; }
+  if (turn.copied) {
+    const c = activeChat();
+    const from = (c && c.clonedByName) ? c.clonedByName + '\'s conversation' : 'a colleague\'s conversation';
+    wrap.appendChild(el('div', 'by-line copied', 'Copied from ' + from + (turn.byName ? ', asked by ' + turn.byName : '') + ', as it was answered then'));
+  }
+  else if (turn.byName) wrap.appendChild(el('div', 'by-line', 'asked by ' + turn.byName));
   const u = el('div', 'msg user'); u.appendChild(el('div', 'bubble', turn.q));
   const b = el('div', 'msg bot');
   const body = el('div', 'body');
@@ -1252,11 +1347,15 @@ function updateComposer() {
   // One answer at a time; if it is streaming in another chat, say so rather than
   // leaving the box mysteriously disabled.
   const cur = activeChat();
-  const readonly = !!(cur && (cur.readonly || cur.view));
-  qBox.disabled = readonly;
-  if (readonly) sendBtn.disabled = true;
-  qBox.placeholder = readonly ? 'Shared with you, read-only. Start a new chat to ask your own questions.'
-    : !busy ? (cur ? (cur.expired ? 'This conversation expired: a new question starts a new one…' : 'Ask a follow-up…')
+  const readonly = !!(cur && (cur.view || (cur.readonly && !cur.write)));
+  const theirs = !!(cur && cur.busy && cur.busy.user !== ME);
+  qBox.disabled = readonly || theirs;
+  if (readonly || theirs) sendBtn.disabled = true;
+  qBox.placeholder = readonly ? 'Shared with you, read-only. Clone it to continue on your own, or start a new chat.'
+    : theirs ? ((cur.busy.name || 'A colleague') + ' is being answered in this conversation; wait for that answer…')
+    : !busy ? (cur ? (cur.expired ? 'This conversation expired: a new question starts a new one…'
+                      : cur.write ? 'Continue the conversation ' + (cur.ownerName ? 'shared by ' + cur.ownerName : '') + '…'
+                      : 'Ask a follow-up…')
                    : 'Ask about this dataset…')
     : busy.chatId === activeId ? 'Answering…' : 'Waiting for the answer in another chat…';
   renderTopTools();
@@ -1274,7 +1373,8 @@ $('composer').addEventListener('submit', e => {
 function ask(text) {
   const q = (text !== undefined ? text : qBox.value).trim();
   if (!q || busy) return;
-  if (activeChat() && (activeChat().readonly || activeChat().view)) return;
+  if (activeChat() && !canWrite(activeChat())) return;
+  if (activeChat() && activeChat().busy && activeChat().busy.user !== ME) return;
 
   let chat = activeChat();
   if (!chat) {
@@ -1311,7 +1411,20 @@ function ask(text) {
     // A different id back for an existing conversation means the server no longer had
     // it (idle past its expiry, or deleted), so this answer starts without the earlier
     // questions. Say so, or "them" in the question would silently mean nothing.
-    if (chat.thread && id !== chat.thread) turn.fresh = true;
+    if (chat.thread && id !== chat.thread) {
+      turn.fresh = true;
+      if (chat.readonly) {
+        // not continued in the colleague's conversation after all: this question and its
+        // answer become a conversation of this person's own
+        chat.turns = chat.turns.filter(t => t !== turn);
+        const own = { id: uid(), title: titleFor(q), created: Date.now(), updated: Date.now(), thread: id, turns: [turn], sharedWith: [] };
+        chats.unshift(own);
+        busy.chatId = own.id;
+        activeId = own.id;
+        chat = own;
+        renderSidebar(); renderThread();
+      }
+    }
     chat.thread = id; chat.expired = false; chat.remote = false; save();
   });
   src.addEventListener('step', e => {
@@ -1402,6 +1515,7 @@ function ask(text) {
     save(); renderSidebar(); updateComposer();
     refreshMyUsage();
     if (chat.id === activeId) qBox.focus();
+    if (chat.readonly || chat.clonedFrom) setTimeout(() => refreshTurns(chat), 1500);
   }
 }
 
@@ -2397,13 +2511,14 @@ function start(d) {
   POOL = (d && d.pool) || [];
   FEATURES = (d && d.features) || {};
   WHO = (d && d.user) || null;
+  SHARE_RULE = (d && d.share_rule) || SHARE_RULE;
   if (VIEW_THREAD) { enterView(); return; }
   load();
   pickStarters();
   renderSidebar();
   renderThread();
   updateComposer();
-  syncThreads();
+  syncThreads().then(() => { const c = activeChat(); if (c && c.thread && c.turns.length) refreshTurns(c); });
 }
 // One conversation, read-only, by itself: the printable copy behind Export PDF, and the
 // page a shared link opens. Nothing of it is kept in this browser.

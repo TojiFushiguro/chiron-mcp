@@ -381,18 +381,19 @@ def set_flag(flag_id: int, status: str, actor: str) -> bool:
         return False
 
 
-def last_total(thread: str, user: str) -> float | None:
+def last_total(thread: str, user: str | None) -> float | None:
     """The conversation's running cost after its latest recorded answer, for a follow-up
-    whose earlier traces are gone (the ledger outlives them). None when unknown."""
+    whose earlier traces are gone (the ledger outlives them). None when unknown. `user`
+    None means whoever answered last in it (a conversation several people continue)."""
     p = path()
-    if not thread or not user or p is None or not p.exists():
+    if not thread or p is None or not p.exists():
         return None
     try:
         con = _connect(p)
         try:
             row = con.execute(
-                "SELECT cost_total FROM answers WHERE thread = ? AND user = ? AND cost_total IS NOT NULL "
-                "ORDER BY ended DESC, id DESC LIMIT 1", (thread, user)).fetchone()
+                "SELECT cost_total FROM answers WHERE thread = ? AND (? IS NULL OR user = ?) AND cost_total IS NOT NULL "
+                "ORDER BY ended DESC, id DESC LIMIT 1", (thread, user, user)).fetchone()
         finally:
             con.close()
     except sqlite3.Error:

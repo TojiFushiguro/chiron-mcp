@@ -392,7 +392,7 @@ class Trace:
         if self._prior_cost is None and followup:
             # The earlier answers' traces are gone (cleared, or pruned under an older
             # retention rule) but the ledger still has the conversation's running cost.
-            self._prior_cost = usage.last_total(thread, user)
+            self._prior_cost = usage.last_total(thread, None)
         # Steps already written to the call log (chiron_mcp.calllog): one line each.
         self._logged: set[str] = set()
         self.data: dict = {
@@ -1562,15 +1562,26 @@ def find(root: Path, trace_id: str, user: str | None) -> dict | None:
     return None
 
 
-def prior(root: Path, thread: str, user: str) -> list[dict]:
-    """The earlier traced answers in a conversation, oldest first, in brief."""
+def _owned_by(data: dict, user) -> bool:
+    """Whether a record belongs to `user`: one username, a set of them (a conversation's
+    owner and the colleagues who may continue it), or None for anyone."""
+    if user is None:
+        return True
+    if isinstance(user, str):
+        return data.get("user") == user
+    return data.get("user") in set(user)
+
+
+def prior(root: Path, thread: str, user) -> list[dict]:
+    """The earlier traced answers in a conversation, oldest first, in brief. `user` as
+    in _owned_by: a conversation continued by several people has one running cost."""
     out = []
     for path in (Path(root) / _safe(thread)).glob("*.json"):
         try:
             data = json.loads(path.read_text())
         except (OSError, ValueError):
             continue
-        if data.get("user") != user:
+        if not _owned_by(data, user):
             continue
         out.append({"question": data.get("question"), "cohorts": data.get("cohorts") or [],
                     "numbers": data.get("numbers") or [],
@@ -1579,17 +1590,18 @@ def prior(root: Path, thread: str, user: str) -> list[dict]:
     return sorted(out, key=lambda p: p["started"])
 
 
-def turns(root: Path, thread: str, user: str) -> list[dict]:
+def turns(root: Path, thread: str, user) -> list[dict]:
     """A conversation's answers in brief, oldest first, in the shape the page keeps a
-    turn: the question, the answer, the error if any, when, and the trace's summary. The
-    cohort and report buttons are not kept here, so a turn rebuilt from this has none."""
+    turn: the question, the answer, the error if any, when, who asked, and the trace's
+    summary. `user` as in _owned_by. The cohort and report buttons are not kept here, so
+    a turn rebuilt from this has none."""
     out = []
     for path in (Path(root) / _safe(thread)).glob("*.json"):
         try:
             data = json.loads(path.read_text())
         except (OSError, ValueError):
             continue
-        if data.get("user") != user:
+        if not _owned_by(data, user):
             continue
         checks = data.get("checks") or []
         steps = data.get("steps") or []
@@ -1598,6 +1610,7 @@ def turns(root: Path, thread: str, user: str) -> list[dict]:
             "error": data.get("error"), "at": int((data.get("started") or 0) * 1000),
             "fresh": bool(data.get("followup_lost")), "done": bool(data.get("done")),
             "access_level": data.get("access_level"), "details": data.get("details"),
+            "by": data.get("user"),
             "trace": {"id": data.get("id"), "ms": data.get("ended"), "model": data.get("model"),
                       "n": len(steps),
                       "fail": sum(1 for c in checks if c.get("level") == "fail"),

@@ -18,6 +18,12 @@ settings, like tests/ask_e2e.py):
     example a command that restarts the Ask server); the follow-up must still continue
     the same conversation, since the registry and the transcript live on disk.
 
+    Sharing (with the permission suite's perm_* accounts, made and removed here): a read
+    share, a "can continue" share refused for different permissions and granted for
+    identical ones, the colleague's follow-up in the owner's conversation, the lock while
+    it is answered, who sees whose trace, a clone with the copied turns as context, and
+    the re-check on open after the owner's access is reduced.
+
     ASK_URL=http://localhost:8900 .venv/bin/python tests/persistence.py   # --live-only, --offline-only
 """
 
@@ -62,6 +68,15 @@ def offline() -> None:
     check("[ttl] 0, never and off keep them for good", all(ttl(x) is None for x in ("0", "never", "off", "  ", "NEVER")))
     check("[ttl] a number is hours", ttl("12") == 12.0 and ttl("0.5") == 0.5)
     check("[ttl] nonsense and negatives keep them for good rather than failing", ttl("abc") is None and ttl("-3") is None)
+
+    mv = W.may_view
+    check("[gate] at_least: the same level reads the same level", mv("deid", False, "deid", False, "at_least"))
+    check("[gate] at_least: no identifying columns, no answer given with them", not mv("deid", True, "deid", False, "at_least"))
+    check("[gate] at_least: a higher level reads a lower one", mv("deid", False, "phi", False, "at_least"))
+    check("[gate] at_least: a lower level does not read a higher one", not mv("deid", False, "agg", False, "at_least"))
+    check("[gate] identical: a higher level does not read a lower one", not mv("deid", False, "phi", False, "identical"))
+    check("[gate] identical: the same level and right", mv("deid", True, "deid", True, "identical"))
+    check("[gate] no access reads nothing", not mv("deid", False, None, False, "at_least") and not mv(None, False, "phi", True, "at_least"))
 
     with tempfile.TemporaryDirectory() as tmp:
         old_state, old_ttl = W._state_dir, W.THREAD_TTL_HOURS
@@ -256,12 +271,92 @@ def live() -> None:
     r = E.post_json(f"{E.ASK}/usage/flag", {"id": fid, "status": "handled"}, admin)
     check(f"{tag} an admin marks it handled", r.get("ok") is True and any(f["id"] == fid and f["status"] == "handled" for f in r.get("flags") or []), r.get("ok"))
 
+    collaboration(me, tid, trace_id)
+
     r = E.post_json(f"{E.ASK}/forget", {"thread": tid}, me)
     listed = E.get_json(f"{E.ASK}/threads?dataset={E.DS}", me)
     gone = tid not in {t["thread"] for t in listed.get("threads") or []}
     tr = E.get_json(f"{E.ASK}/trace?id={trace_id}", me)
     check(f"{tag} /forget removes the conversation from /threads and its traces", r.get("forgotten") is True and gone and "error" in tr, (r, gone, tr.get("error")))
     E.STARTED.discard((tid, me))
+
+
+def collaboration(me: str, tid: str, trace_id: str) -> None:
+    """Continuing, cloning and the re-check, on the conversation the live checks made."""
+    import threading
+
+    import permissions as PM
+
+    tag = "[share]"
+    PM.ensure_accounts()
+    try:
+        twin, det, agg = E.mint_session("perm_deid"), E.mint_session("perm_details"), E.mint_session("perm_agg")
+        r = E.post_json(f"{E.ASK}/share", {"thread": tid, "with": "perm_details", "write": True}, me)
+        check(f"{tag} 'can continue' is refused for different permissions, with the reason",
+              "error" in r and "identical" in r["error"], r.get("error", "")[:140])
+        r = E.post_json(f"{E.ASK}/share", {"thread": tid, "with": "perm_details"}, me)
+        check(f"{tag} the same person can be given a read share", any(x["username"] == "perm_details" and not x["write"] and not x["identical"] for x in r.get("shared_with") or []), r)
+        r = E.post_json(f"{E.ASK}/share", {"thread": tid, "with": "perm_deid", "write": True}, me)
+        check(f"{tag} 'can continue' is granted for identical permissions", any(x["username"] == "perm_deid" and x["write"] and x["identical"] for x in r.get("shared_with") or []), r)
+        item = next((t for t in E.get_json(f"{E.ASK}/threads?dataset={E.DS}", twin).get("shared") or [] if t["thread"] == tid), None)
+        check(f"{tag} the colleague's listing says they can continue", bool(item and item.get("can_write")), item)
+        v = E.get_json(f"{E.ASK}/threads?thread={tid}", twin)
+        check(f"{tag} their view is writable and holds the two answers", v.get("role") == "writer" and v.get("can_write") and not v.get("read_only")
+              and len([t for t in v.get("turns") or [] if t.get("answer")]) == 2, {k: v.get(k) for k in ("role", "can_write", "read_only", "withheld")})
+        results: dict = {}
+        th = threading.Thread(target=lambda: results.update(w=E.ask("How many of them live in Hamilton county?", twin, E.DS, tid)))
+        th.start()
+        time.sleep(4)
+        b = E.get_json(f"{E.ASK}/threads?thread={tid}", me).get("busy")
+        check(f"{tag} while they are being answered, the owner's view names who", bool(b and b.get("user") == "perm_deid"), b)
+        ev_o = E.ask("How many of them are men?", me, E.DS, tid)
+        check(f"{tag} the owner's question meanwhile is refused with their name, and nothing is stopped",
+              "error" in ev_o and "being answered" in str(ev_o.get("error")) and not ev_o.get("answer"), (ev_o.get("error") or "")[:100])
+        th.join(timeout=300)
+        w = results.get("w") or {}
+        check(f"{tag} the colleague's follow-up continued the conversation and was answered", w.get("thread") == tid and bool(E.numbers(w.get("answer") or "")), (w.get("error") or w.get("answer") or "")[:100])
+        E.STARTED.discard((tid, twin))
+        turns = E.get_json(f"{E.ASK}/threads?thread={tid}", me).get("turns") or []
+        check(f"{tag} the owner sees that turn with the colleague's name and no trace of theirs",
+              len(turns) == 3 and turns[-1].get("by") == "perm_deid" and turns[-1].get("by_name") and "trace" not in turns[-1] and "trace" in turns[0],
+              [(t.get("by"), "trace" in t) for t in turns])
+        tr = (w.get("trace_start") or {}).get("id")
+        check(f"{tag} the owner cannot read the colleague's trace", "error" in E.get_json(f"{E.ASK}/trace?id={tr}", me))
+        own = E.get_json(f"{E.ASK}/trace?id={tr}", twin)
+        check(f"{tag} the colleague reads their own, costed as one turn", "steps" in own and isinstance((own.get("stats") or {}).get("cost_usd"), (int, float)), (own.get("stats") or {}).get("cost_usd"))
+
+        r = E.post_json(f"{E.ASK}/clone", {"thread": tid}, det)
+        cid = r.get("thread")
+        check(f"{tag} a reader clones it: a conversation of their own seeded with the turns they saw", bool(cid) and r.get("turns") == 3, r)
+        cv = E.get_json(f"{E.ASK}/threads?thread={cid}", det)
+        check(f"{tag} the clone shows the copied turns as copied, with who asked each",
+              cv.get("role") == "owner" and cv.get("cloned_from") == tid and len(cv.get("turns") or []) == 3 and all(t.get("copied") and t.get("by_name") for t in cv["turns"]), {k: cv.get(k) for k in ("role", "cloned_from")})
+        ev3 = E.ask("How many of the asthma patients have COPD too?", det, E.DS, cid)
+        check(f"{tag} the first question in the clone keeps its id and is answered", ev3.get("thread") == cid and bool(E.numbers(ev3.get("answer") or "")), (ev3.get("error") or ev3.get("answer") or "")[:100])
+        full = E.get_json(f"{E.ASK}/trace?id={(ev3.get('trace_start') or {}).get('id')}", det)
+        check(f"{tag} and carried the copied conversation as context", "copied from one that" in json.dumps(full.get("prompt") or ""))
+        check(f"{tag} someone with no part in the conversation cannot clone it", "error" in E.post_json(f"{E.ASK}/clone", {"thread": tid}, agg))
+
+        from chiron import models
+        cu = models.ChironUser.objects.get(user__username="demouser", dataset__unique_id=E.DS)
+        old = cu.access_level
+        cu.access_level = "agg"; cu.save()
+        try:
+            v = E.get_json(f"{E.ASK}/threads?thread={tid}", me)
+            check(f"{tag} the owner, reduced to aggregate, no longer sees their own answers", v.get("withheld") == 3 and all(t.get("withheld") for t in v.get("turns") or []), {k: v.get(k) for k in ("withheld", "role")})
+            r = E.get_json(f"{E.ASK}/trace?id={trace_id}", me)
+            check(f"{tag} nor their traces", "error" in r and "higher access level" in r["error"], r.get("error", "")[:80])
+            item = next((t for t in E.get_json(f"{E.ASK}/threads?dataset={E.DS}", twin).get("shared") or [] if t["thread"] == tid), None)
+            check(f"{tag} the colleague, no longer identical, may no longer continue", bool(item) and item.get("can_write") is False, item and item.get("can_write"))
+        finally:
+            cu.access_level = old; cu.save()
+        v = E.get_json(f"{E.ASK}/threads?thread={tid}", me)
+        check(f"{tag} access restored, the answers are back", v.get("withheld") == 0, v.get("withheld"))
+        E.post_json(f"{E.ASK}/forget", {"thread": cid}, det)
+        for u in ("perm_details", "perm_deid"):
+            E.post_json(f"{E.ASK}/share", {"thread": tid, "with": u, "remove": True}, me)
+    finally:
+        PM.remove_accounts()
 
 
 def main() -> int:
