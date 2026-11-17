@@ -559,9 +559,9 @@
   <div class="side-foot">
     <span class="mine" id="my-usage" hidden title="Your own total: questions asked through Ask and what they cost"></span>
     <a href="usage" target="_blank" rel="noopener" id="usage-link" hidden
-       title="What Ask is used for and what it costs, for everyone, and who may see what">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      Usage
+       title="Usage and costs, people and access, reported answers">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+      Admin
     </a>
   </div>
 </aside>
@@ -937,7 +937,6 @@ function renderShare(msg, bad) {
   pop.hidden = false;
   $('share-btn').setAttribute('aria-expanded', 'true');
   pop.appendChild(el('h3', null, 'Share this conversation'));
-  pop.appendChild(el('p', null, 'People you add find it under "Shared with me" in their Ask sidebar.'));
   const row = el('div', 'row');
   const input = el('input'); input.type = 'text'; input.placeholder = 'Chiron username or email'; input.setAttribute('aria-label', 'Chiron username or email');
   const add = el('button', 'mini-btn', 'Add'); add.type = 'button';
@@ -1326,7 +1325,6 @@ function flagForm(turn) {
   form.appendChild(kinds);
   const note = el('textarea'); note.placeholder = 'Optional: what you expected, or what you were after'; note.setAttribute('aria-label', 'Details');
   form.appendChild(note);
-  form.appendChild(el('small', null, 'Sends this question, the answer and its trace id to the Ask administrators. Nothing else from this conversation.'));
   const row = el('div', 'row');
   const send = el('button', 'mini-btn', 'Send report'); send.type = 'submit';
   const cancel = el('button', 'mini-btn', 'Cancel'); cancel.type = 'button';
@@ -1914,7 +1912,7 @@ function traceBar(turn, ui) {
   const live = LIVE[turn.id], sum = turn.trace || {};
   // The summary is the tooltip; the panel has all of it.
   const bits = [];
-  if (live && !live.tail) { b.appendChild(el('span', 'live-dot')); bits.push(`${live.steps.length} steps so far`, fmtMs(liveNow(live))); }
+  if (live && !live.tail) bits.push(`${live.steps.length} steps so far`, fmtMs(liveNow(live)));
   else {
     if (sum.n != null) bits.push(`${sum.n} steps`);
     if (sum.ms != null) bits.push(fmtMs(sum.ms));
