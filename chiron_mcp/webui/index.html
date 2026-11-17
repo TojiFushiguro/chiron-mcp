@@ -78,7 +78,9 @@
     padding: 8px 34px 8px 10px; border-radius: 9px; color: var(--ink-2);
   }
   .chat-item .title {
-    display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: clip;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
   }
   .chat-item .meta { display: block; font-size: 11.5px; color: var(--faint); }
   .chat-item.expired .title { color: var(--muted); }
@@ -128,7 +130,7 @@
   .icon-btn:hover { background: var(--panel); }
   .menu-btn { display: none; }
   /* Share and Export, for the open conversation */
-  .top-tools { display: flex; gap: 6px; margin-left: 8px; flex: none; position: relative; }
+  .top-tools { display: flex; gap: 6px; margin-left: auto; flex: none; position: relative; }
   .top-btn {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2);
     background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer;
@@ -136,12 +138,14 @@
   .top-btn:hover { border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
   .top-btn[aria-expanded="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
   .popover {
-    position: absolute; top: 40px; left: 0; z-index: 30; width: 320px; max-width: calc(100vw - 32px);
+    position: absolute; top: 40px; right: 0; z-index: 30; width: 320px; max-width: calc(100vw - 32px);
     background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
     padding: 12px 14px; font-size: 13px;
   }
   .popover h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 600; }
   .popover p { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .popover .rules { margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line-2); color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  .popover .rules b { font-weight: 600; color: var(--ink-2); }
   .popover .row { display: flex; gap: 6px; }
   .popover input {
     flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 9px;
@@ -167,9 +171,7 @@
   .popover label.cont { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
   .popover label.cont input { margin: 0; }
   /* reporting an answer */
-  .feedback { margin-top: 8px; font-size: 12px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
-  .feedback .link-btn { color: var(--faint); text-decoration: none; }
-  .feedback .link-btn:hover { color: var(--ink-2); text-decoration: underline; }
+  .feedback { font-size: 12px; color: var(--faint); }
   .flag-form {
     margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel);
     font-size: 13px; display: flex; flex-direction: column; gap: 8px; max-width: 560px;
@@ -357,8 +359,9 @@
   }
   /* who is signed in, and what they may see here. Inside the Chiron UI the person's
      name is already in Chiron's own header, so only the access level shows there. */
+  .top-tools[hidden] + .who { margin-left: auto; }   /* no conversation open: the name alone keeps the right */
   .who {
-    margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; flex: none; min-width: 0;
+    margin-left: 12px; display: flex; flex-direction: column; align-items: flex-end; flex: none; min-width: 0;
     line-height: 1.25; text-align: right; cursor: default;
   }
   .who b {
@@ -368,8 +371,10 @@
   .who small { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .who.out b { color: var(--danger); }
 
-  .trace-slot { margin-top: 14px; }
+  .trace-slot { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .trace-slot:empty { display: none; }
+  .trace-slot > .trace, .trace-slot > .flag-form { flex: 1 1 100%; }
+  .trace-slot > .flag-form { max-width: none; }   /* the open report form takes its own line */
   .trace-bar {
     display: inline-flex; align-items: center; flex-wrap: wrap; gap: 7px; cursor: pointer;
     font-size: 12.5px; color: var(--muted); background: none; border: 1px solid var(--line-2);
@@ -932,11 +937,7 @@ function renderShare(msg, bad) {
   pop.hidden = false;
   $('share-btn').setAttribute('aria-expanded', 'true');
   pop.appendChild(el('h3', null, 'Share this conversation'));
-  pop.appendChild(el('p', null, 'The person reads it in their own Ask sidebar under "Shared with me". ' +
-    (SHARE_RULE === 'identical'
-      ? 'Each answer shows only if their permissions on this dataset are identical to yours at the time it was answered; otherwise it is held back. '
-      : 'Each answer shows only if their access on this dataset is at least yours at the time it was answered; otherwise it is held back. ') +
-    'Your questions are shown as you typed them. "Can continue" lets a person with identical permissions ask follow-ups in it, one person at a time.'));
+  pop.appendChild(el('p', null, 'People you add find it under "Shared with me" in their Ask sidebar.'));
   const row = el('div', 'row');
   const input = el('input'); input.type = 'text'; input.placeholder = 'Chiron username or email'; input.setAttribute('aria-label', 'Chiron username or email');
   const add = el('button', 'mini-btn', 'Add'); add.type = 'button';
@@ -970,6 +971,13 @@ function renderShare(msg, bad) {
   if (!(chat.sharedWith || []).length) list.appendChild(el('li', 'msg', 'Not shared with anyone yet.'));
   pop.appendChild(list);
   if (msg) pop.appendChild(el('div', 'msg' + (bad ? ' bad' : ''), msg));
+  const rules = el('div', 'rules');
+  rules.append(el('b', null, 'Read-only'), document.createTextNode(' unless you tick "can continue", which needs the same permissions as yours. '));
+  rules.append(document.createTextNode(SHARE_RULE === 'identical'
+    ? 'Answers show only to people whose permissions match yours. '
+    : 'Answers above a person\'s access level stay hidden from them. '));
+  rules.append(document.createTextNode('Your questions appear as you typed them.'));
+  pop.appendChild(rules);
   if (!msg) setTimeout(() => input.focus(), 0);
 }
 async function shareWith(chat, who, remove, write) {
@@ -1289,8 +1297,7 @@ function paintBot(body, turn) {
     });
     body.appendChild(box);
   }
-  body.appendChild(traceSlot(turn));
-  if (turn.trace && turn.trace.id && chat && !chat.readonly && !chat.view) body.appendChild(flagRow(turn));
+  body.appendChild(traceSlot(turn));   // the Trace and Report a problem buttons, and the trace panel
 }
 
 // "Report a problem" under an answer: the question, the answer and the trace id go to
@@ -1298,16 +1305,18 @@ function paintBot(body, turn) {
 // without anyone having to write an email.
 const FLAG_KINDS = [['wrong', 'Wrong figure or answer'], ['incomplete', 'Incomplete'],
                     ['could_not', 'Could not do what I asked'], ['other', 'Something else']];
+const FLAG_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 1-1h12l-2 4 2 4H5"/></svg>';
 function flagRow(turn) {
-  const row = el('div', 'feedback');
-  if (turn.flagged) { row.appendChild(el('span', null, 'Reported to the Ask administrators. Thank you.')); return row; }
-  const link = el('button', 'link-btn', 'Report a problem with this answer'); link.type = 'button';
-  link.onclick = () => { row.replaceWith(flagForm(turn)); };
-  row.appendChild(link);
-  return row;
+  if (turn.flagged) { const note = el('span', 'feedback', 'Reported to the Ask administrators. Thank you.'); note.dataset.report = '1'; return note; }
+  const b = el('button', 'trace-bar report-btn'); b.type = 'button'; b.dataset.report = '1';
+  b.title = 'Send this question, the answer and its trace to the people who run Ask';
+  b.innerHTML = FLAG_ICON;
+  b.appendChild(el('span', null, 'Report a problem'));
+  b.onclick = () => { b.replaceWith(flagForm(turn)); };
+  return b;
 }
 function flagForm(turn) {
-  const form = el('form', 'flag-form');
+  const form = el('form', 'flag-form'); form.dataset.report = '1';
   form.appendChild(el('b', null, 'What is wrong with this answer?'));
   const kinds = el('div', 'kinds');
   FLAG_KINDS.forEach(([v, label], i) => {
@@ -1876,14 +1885,21 @@ function repaintAllTraces() {
 function renderTraceSlot(slot, turn) {
   // Keep the reader's place: a repaint must not scroll a long trace out from under them.
   const keep = scroller.scrollTop;
+  // "Report a problem" (button, open form or thank-you note) sits beside the trace
+  // button and is kept as it is across repaints of the trace.
+  let report = slot.querySelector(':scope > [data-report]');
   slot.textContent = '';
-  const live = LIVE[turn.id];
-  if (!turn.trace && !live) return;   // answered before traces existed, or tracing is off
+  const live = LIVE[turn.id], chat = activeChat();
+  const traced = !!(turn.trace || live);   // else answered before traces existed, or tracing is off
   const ui = uiFor(turn);
-  // The full record is fetched once the answer is done; until then, what streamed in.
-  if (ui.open && (!live || live.tail)) ensureFull(turn);
-  slot.appendChild(traceBar(turn, ui));
-  if (ui.open) slot.appendChild(tracePanel(turn, ui));
+  if (traced) {
+    // The full record is fetched once the answer is done; until then, what streamed in.
+    if (ui.open && (!live || live.tail)) ensureFull(turn);
+    slot.appendChild(traceBar(turn, ui));
+  }
+  if (!report && turn.trace && turn.trace.id && !(live && !live.tail) && chat && !chat.readonly && !chat.view) report = flagRow(turn);
+  if (report) slot.appendChild(report);
+  if (traced && ui.open) slot.appendChild(tracePanel(turn, ui));
   if (!atBottom() && scroller.scrollTop !== keep) {
     scroller.style.scrollBehavior = 'auto';
     scroller.scrollTop = keep;
@@ -1893,23 +1909,21 @@ function renderTraceSlot(slot, turn) {
 function traceBar(turn, ui) {
   const b = el('button', 'trace-bar'); b.type = 'button';
   b.setAttribute('aria-expanded', ui.open ? 'true' : 'false');
-  b.title = ui.open ? 'Hide how this answer was produced' : 'Show how this answer was produced, step by step';
   b.innerHTML = TRACE_ICON;
   b.appendChild(el('span', null, 'Trace'));
   const live = LIVE[turn.id], sum = turn.trace || {};
-  if (live && !live.tail) {
-    b.appendChild(el('span', 'live-dot'));
-    b.appendChild(el('span', null, `live · ${live.steps.length} steps · ${fmtMs(liveNow(live))}`));
-  } else {
-    const bits = [];
+  // The summary is the tooltip; the panel has all of it.
+  const bits = [];
+  if (live && !live.tail) { b.appendChild(el('span', 'live-dot')); bits.push(`${live.steps.length} steps so far`, fmtMs(liveNow(live))); }
+  else {
     if (sum.n != null) bits.push(`${sum.n} steps`);
     if (sum.ms != null) bits.push(fmtMs(sum.ms));
     if (sum.model) bits.push(sum.model);
-    if (bits.length) b.appendChild(el('span', null, bits.join(' · ')));
-    if (sum.fail) b.appendChild(el('span', 'badge fail', `${sum.fail} failed`));
-    if (sum.warn) b.appendChild(el('span', 'badge warn', `${sum.warn} to check`));
-    if (sum.n != null && !sum.fail && !sum.warn) b.appendChild(el('span', 'badge pass', 'no problems found'));
+    if (sum.fail) bits.push(`${sum.fail} failed`);
+    if (sum.warn) bits.push(`${sum.warn} to check`);
+    if (sum.n != null && !sum.fail && !sum.warn) bits.push('no problems found');
   }
+  b.title = (ui.open ? 'Hide how this answer was produced' : 'How this answer was produced, step by step') + (bits.length ? ': ' + bits.join(' · ') : '');
   b.insertAdjacentHTML('beforeend', CHEV_ICON);
   b.onclick = () => { ui.open = !ui.open; repaintTrace(turn); };
   return b;
@@ -2028,6 +2042,8 @@ function traceHead(turn, data) {
   head.appendChild(seg);
   const meta = [];
   if (data) {
+    if (data.steps) meta.push(`${data.steps.length} steps` + (data.done ? '' : ' so far'));
+    if (data.stats && data.stats.total_ms != null) meta.push(fmtMs(data.stats.total_ms));
     if (data.model) meta.push(data.model);
     if (data.claude_version) meta.push('Claude Code ' + data.claude_version);
     if (data.followup_lost) meta.push('conversation had expired: asked as a new one');
