@@ -341,6 +341,19 @@ def main() -> int:
     figs = T._record_figures(tr3)
     check(f"{tag} a ranking's figures are not taken for a wrong cohort count", 118 in figs and 117 in figs and 10000 not in figs, sorted(figs)[:6])
 
+    # The live answer of 2026-11-17 led with the patient id; its 4335 was read as the lead
+    # figure and the trace warned that the answer led with 4,335.
+    lead = "The patient with the most systolic blood pressure values is **079305db-b81c-4335-7081-43bcc8b0b719**, with 118 readings."
+    check(f"{tag} the digits of a patient id are not the answer's lead figure", webapp.headline_figure(lead) == 118,
+          webapp.headline_figure(lead))
+    check(f"{tag} nor a date's, nor a name's such as COVID-19",
+          webapp.headline_figure("Her first visit was on 1930-12-14; she had 92 visits.") == 92
+          and webapp.headline_figure("No patients have COVID-19.") is None
+          and webapp.headline_figure("**445** of the 841 asthma patients are women.") == 445,
+          [webapp.headline_figure(t) for t in ("Her first visit was on 1930-12-14; she had 92 visits.", "No patients have COVID-19.")])
+    figs = [f["text"] for f in T._figures("is 079305db-b81c-4335-7081-43bcc8b0b719, with 118 readings; median 34, on 1930-12-14")]
+    check(f"{tag} the trace's figure check reads the same way", figs == ["118", "34"], figs)
+
     print("ALL PASS" if not fails else f"{len(fails)} FAILED:\n  " + "\n  ".join(fails))
     return 1 if fails else 0
 

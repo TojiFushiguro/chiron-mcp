@@ -271,10 +271,27 @@ def _facts(name: str, args: dict, data) -> tuple[str, list[list[str]], str | Non
 _FIG = re.compile(r"(?<![\w.,])\d[\d,]*(?:\.\d+)?(?:\s?%)?")
 
 
+def in_identifier(text: str, start: int, end: int) -> bool:
+    """Whether the digits at text[start:end] belong to an identifier or a date rather than
+    stand as a figure: the run of letters, digits and hyphens around them holds a letter
+    (a patient id such as 079305db-b81c-4335-..., "COVID-19", "type-2") or two hyphens
+    (a date such as 1930-12-14, a code)."""
+    a, b = start, end
+    while a > 0 and (text[a - 1].isalnum() or text[a - 1] in "-_"):
+        a -= 1
+    while b < len(text) and (text[b].isalnum() or text[b] in "-_"):
+        b += 1
+    token = text[a:b].strip("-_")
+    return any(ch.isalpha() for ch in token) or token.count("-") >= 2
+
+
 def _figures(text: str) -> list[dict]:
-    """Every number written in a piece of text, with commas read as thousands."""
+    """Every number written in a piece of text, with commas read as thousands; not the
+    digits inside an identifier or a date."""
     out = []
     for m in _FIG.finditer(text or ""):
+        if in_identifier(text, m.start(), m.end()):
+            continue
         raw = m.group().rstrip(",")
         pct = raw.endswith("%")
         core = raw.rstrip("% ").rstrip(",")

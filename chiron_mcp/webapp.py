@@ -1397,15 +1397,23 @@ def headline_figure(answer: str) -> int | None:
     button must be about the patients the answer is about, not a larger cohort it
     merely mentions.
     """
-    # Only the prose counts: tables bold their totals and charts are all numbers.
+    # Only the prose counts: tables bold their totals and charts are all numbers. The
+    # digits of a patient id or a date are not a figure (the 4335 of 079305db-b81c-4335-...).
+    from chiron_mcp.trace import in_identifier
+
+    def first(text: str) -> int | None:
+        for m in _NUMBER.finditer(text):
+            if not in_identifier(text, m.start(), m.end()):
+                return int(m.group().replace(",", ""))
+        return None
+
     prose = re.sub(r"```[\s\S]*?```", " ", answer or "")
     prose = "\n".join(line for line in prose.splitlines() if not line.lstrip().startswith("|"))
     for bold in re.findall(r"\*\*([^*]+)\*\*", prose):
-        m = _NUMBER.search(bold)
-        if m:
-            return int(m.group().replace(",", ""))
-    m = _NUMBER.search(prose)
-    return int(m.group().replace(",", "")) if m else None
+        n = first(bold)
+        if n is not None:
+            return n
+    return first(prose)
 
 
 def subgroup_cohort(bd: dict, figure: int, username: str, allow_superuser: bool) -> dict | None:
