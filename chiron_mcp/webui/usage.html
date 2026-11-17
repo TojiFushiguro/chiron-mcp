@@ -128,7 +128,8 @@
   .lvl.phi { border-color: var(--danger-line); background: var(--danger-bg); color: var(--danger); }
   .lvl.phi .ds { color: var(--danger); opacity: .75; }
   .lvl.none { color: var(--faint); border-style: dashed; }
-  .legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
+  .lvl .nm { padding-left: 6px; border-left: 1px solid; border-left-color: inherit; }
+  .legend { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
   .legend-item {
     display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); line-height: 1.35;
     background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px;
@@ -526,6 +527,7 @@ function lvlChip(ds, d) {
   const chip = el('span', 'lvl ' + (level || 'none'));
   chip.appendChild(el('span', 'ds', ds.name + ':'));
   chip.appendChild(el('span', '', level ? (ACCESS[level] || level) : 'no access'));
+  if (d && d.subject_details && d.level && d.level !== 'agg') chip.appendChild(el('span', 'nm', 'names'));
   const notes = [];
   if (d && d.effective && d.level && d.effective !== d.level) notes.push('Ask applies ' + (ACCESS[d.effective] || d.effective) + ' (the ceiling)');
   if (d && d.level && d.level !== 'agg') notes.push(d.subject_details ? 'may see identifying columns' : 'no identifying columns');
@@ -688,6 +690,10 @@ function renderLegend(a) {
     item.appendChild(el('span', '', text));
     box.appendChild(item);
   });
+  const item = el('div', 'legend-item');
+  item.appendChild(el('span', 'lvl', 'names'));
+  item.appendChild(el('span', '', 'Names and other identifiers. A separate switch for each dataset, under Edit.'));
+  box.appendChild(item);
 }
 
 function renderChanges() {

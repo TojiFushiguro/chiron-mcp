@@ -43,7 +43,7 @@ try:
     S._require_columns_viewable(deid, [pid, first, last, city])
     check("a de-identified identity is refused the name columns", False, "no error")
 except AccessError as exc:
-    check("a de-identified identity is refused the name columns", "first, last" in str(exc) and "may not view" in str(exc), str(exc)[:120])
+    check("a de-identified identity is refused the name columns", "first, last" in str(exc) and "switched off" in str(exc), str(exc)[:120])
 try:
     S._require_columns_viewable(deid, [pid, city, birth])
     check("the same identity may list id, city and birthdate", True)
@@ -54,6 +54,39 @@ try:
     check("an identity that may view subject details is not refused", True)
 except AccessError as exc:
     check("an identity that may view subject details is not refused", False, str(exc)[:120])
+
+# The refusal names the real reason: the names switch, not the level. A full-access row
+# without the switch was told "this account (de-identified access)" until 2026-11-17, and
+# its owner, an admin, was sent to "whoever manages your Chiron account".
+def row(level, raw, admin):
+    return NS(access_level=level, can_view_subject_details=False,
+              chironuser=NS(access_level=raw, user=NS(is_superuser=admin)))
+
+
+def refusal(ident):
+    try:
+        S._require_columns_viewable(ident, [first, last, city])
+    except AccessError as exc:
+        return str(exc)
+    return ""
+
+
+capped = refusal(row("deid", "phi", True))
+check("a full-access admin without the switch is told the switch, not 'de-identified access'",
+      "switched off" in capped and "full access (Ask uses at most de-identified)" in capped
+      and "de-identified access" not in capped, capped[:160])
+check("... and that they can switch it on themselves on the Admin page",
+      "switch them on for itself" in capped and "Admin page" in capped, capped[:160])
+plain = refusal(row("deid", "deid", False))
+check("a de-identified account is told its level and that an admin can switch it on",
+      "which is de-identified." in plain and "An admin can switch them on" in plain, plain[:160])
+concept_msg = ""
+try:
+    S._require_concept_viewable(row("phi", "phi", False), first, "used as a filter")
+except AccessError as exc:
+    concept_msg = str(exc)
+check("a filter on a name says the same", "switched off" in concept_msg and "which is full access." in concept_msg
+      and "used as a filter" in concept_msg, concept_msg[:160])
 
 print()
 print("all passed" if not fails else f"{len(fails)} failed: {fails}")

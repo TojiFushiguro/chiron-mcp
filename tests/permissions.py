@@ -218,7 +218,7 @@ def unmasked_small(text: str) -> list[str]:
     return cells + worded
 
 
-REFUSED = re.compile(E.REFUSAL.pattern + r"|granted access|not been granted|can.t open|cannot open|"
+REFUSED = re.compile(E.REFUSAL.pattern + r"|granted access|not been granted|been given access|no chiron user|can.t open|cannot open|"
                      r"not available to you|isn.t available|no [a-z ]{0,24}access|not able to", re.I)
 
 

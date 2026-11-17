@@ -392,6 +392,31 @@ def _identifies_person(oConcept) -> bool:
     return bool(getattr(oConcept, "has_phi", False)) or short in _DIRECT_IDENTIFIERS
 
 
+_LEVEL_WORDS = {"agg": "aggregate only", "deid": "de-identified", "phi": "full access"}
+
+
+def _names_off(ident) -> str:
+    """Why a name is refused, in words the model can pass on: names follow their own
+    switch on the account's row (Chiron's can_view_subject_details, "may see identifying
+    columns" on Ask's Admin page), not its level, so a full-access account without the
+    switch is refused like a de-identified one. Saying "de-identified" to such a person
+    is wrong, and they are often the admin who can turn it on."""
+    level = getattr(ident, "access_level", None)
+    raw = getattr(getattr(ident, "chironuser", None), "access_level", None) or level
+    words = _LEVEL_WORDS.get(raw, raw)
+    if raw and level and raw != level:
+        words += f" (Ask uses at most {_LEVEL_WORDS.get(level, level)})"
+    try:
+        admin = bool(ident.chironuser.user.is_superuser)
+    except Exception:  # noqa: BLE001  (a stand-in identity, or no user row)
+        admin = False
+    who = ("This account is an admin, so it can switch them on for itself"
+           if admin else "An admin can switch them on for this account")
+    return ("names and other identifying columns are switched off for this account on this dataset. "
+            + (f"That switch is separate from its access level, which is {words}. " if words else "")
+            + f"{who} on the People tab of Ask's Admin page (Edit, 'may see identifying columns').")
+
+
 def _require_columns_viewable(ident, concepts: list) -> None:
     """An identity that may not view subject details gets no column that identifies a
     person, in a list, in Results or in a report: refused outright, as Chiron's own
@@ -402,9 +427,10 @@ def _require_columns_viewable(ident, concepts: list) -> None:
     if hidden:
         names = ", ".join(str(getattr(c, "name", None) or str(c.permanent_id).split("__")[-1]) for c in hidden)
         raise AccessError(
-            f"{names}: these identify people, and this account (de-identified access) may not view "
-            "subject details, so they cannot be listed, put in Results or saved in a report. Say so, "
-            "and offer columns that do not identify anyone (birthdate, gender, city) or counts.")
+            f"{names}: these identify people, and {_names_off(ident)} Until then they cannot be "
+            "listed, put in Results or saved in a report. Say that in these terms (the switch, "
+            "not a level, and who can switch it on where), and offer columns that do not "
+            "identify anyone (birthdate, gender, city) or counts.")
 
 
 def _require_concept_viewable(ident, oConcept, how: str) -> None:
@@ -415,9 +441,9 @@ def _require_concept_viewable(ident, oConcept, how: str) -> None:
         return
     name = str(getattr(oConcept, "name", None) or str(oConcept.permanent_id).split("__")[-1])
     raise AccessError(
-        f"{name} identifies people, and this account (de-identified access) may not view "
-        f"subject details, so it cannot be {how}. Say so, and offer columns that do not "
-        "identify anyone (birthdate, gender, city) or counts.")
+        f"{name} identifies people, and {_names_off(ident)} Until then it cannot be {how}. "
+        "Say that in these terms (the switch, not a level, and who can switch it on where), and "
+        "offer columns that do not identify anyone (birthdate, gender, city) or counts.")
 
 
 def _cohort_concept_ids(cohort_def) -> list[str]:
