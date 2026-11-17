@@ -138,6 +138,8 @@
   .editor label input { margin: 0; }
   .editor .row-msg { font-size: 12px; color: var(--muted); }
   .confirm { display: inline-flex; gap: 6px; margin-left: 8px; }
+  .actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .actions .confirm { margin-left: 0; }
   .busy { opacity: .5; pointer-events: none; }
   .msg { font-size: 13px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); }
   .msg.bad { background: var(--danger-bg); border-color: var(--danger-line); color: var(--danger); }
@@ -246,7 +248,7 @@
     <div class="msg hide" id="access-msg"></div>
     <section class="card">
       <div id="persons"></div>
-      <p class="note">Everyone who passes the sign-on arrives with de-identified access. Raise or lower a person here; full access and admin take a second click. A superuser cannot change their own admin.</p>
+      <p class="note">Everyone who passes the sign-on arrives with de-identified access. Edit sets a person's level per dataset; Make admin gives them this page and the right to change access. Full access and admin take a second click. Nobody can change their own admin.</p>
     </section>
     <section class="card hide" id="changes-card">
       <h2>Recent changes</h2>
@@ -568,19 +570,6 @@ function editor(p, a) {
   const done = el('button', 'btn small', 'Done'); done.type = 'button';
   done.onclick = () => { OPEN_EDITOR = null; renderPersons(); };
   head.appendChild(el('span', 'spacer'));
-  if (p.username !== a.identity) {
-    const lab = el('label');
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!p.superuser;
-    lab.appendChild(cb); lab.appendChild(document.createTextNode('admin'));
-    lab.title = 'Sees everyone\'s usage and can change access';
-    cb.onchange = () => {
-      if (cb.checked) withConfirm(lab, () => changeAccess({ username: p.username, superuser: true }, box), () => { cb.checked = false; });
-      else changeAccess({ username: p.username, superuser: false }, box);
-    };
-    head.appendChild(lab);
-  } else {
-    head.appendChild(el('span', 'meta', 'admin (you)'));
-  }
   head.appendChild(done);
   box.appendChild(head);
   const rows = (a.datasets || []).map(ds => {
@@ -653,11 +642,23 @@ function renderPersons() {
     const levels = el('div', 'levels');
     (a.datasets || []).forEach(ds => levels.appendChild(lvlChip(ds, (p.datasets || []).find(x => x.id === ds.id))));
     row.appendChild(levels);
-    const act = el('div');
+    const act = el('div', 'actions');
     if (a.can_change) {
       const b = el('button', 'btn small', OPEN_EDITOR === p.username ? 'Close' : 'Edit'); b.type = 'button';
       b.onclick = () => { OPEN_EDITOR = OPEN_EDITOR === p.username ? null : p.username; renderPersons(); };
       act.appendChild(b);
+      // Admin given or taken away in one place, with a second click; never one's own.
+      if (p.username !== a.identity) {
+        const adm = el('button', 'btn small' + (p.superuser ? '' : ' primary'), p.superuser ? 'Remove admin' : 'Make admin'); adm.type = 'button';
+        adm.title = p.superuser
+          ? 'Takes away the admin page and the right to change access'
+          : 'An admin sees everyone\'s usage and the reported answers, and can change anyone\'s access';
+        adm.onclick = () => {
+          adm.disabled = true;
+          withConfirm(act, () => changeAccess({ username: p.username, superuser: !p.superuser }, row), () => { adm.disabled = false; });
+        };
+        act.appendChild(adm);
+      }
     }
     row.appendChild(act);
     if (a.can_change && OPEN_EDITOR === p.username) row.appendChild(editor(p, a));
