@@ -1042,11 +1042,30 @@ def run(dataset: str, where: list | None = None, match: str = "all", start_from:
     out["cohort_def"] = cd
     if notes:
         out["notes"] = notes
-    out["how_to_answer"] = (
-        "Lead with `count` (distinct patients). Say what was counted from what_was_counted, in plain "
-        "words, and which spellings were included (matched). For a follow-up about these patients, "
-        f"pass start_from='{out['group']}'.")
+    out["how_to_answer"] = _how_to_answer(out) + (
+        f" For a follow-up about these patients, pass start_from='{out['group']}'.")
     return out
+
+
+def _how_to_answer(out: dict) -> str:
+    """What the model should lead with, by what the call returned."""
+    if out.get("per_patient"):
+        return ("Answer from `per_patient`: its first row is the patient with the "
+                + out["per_patient"].get("order", "highest figure first").split(" first")[0]
+                + "; name them by the patient id with the figure, say whether others share it (notes), "
+                "and give the spread across patients (across_patients) when it helps. `count` is the "
+                "group that was ranked (what_was_counted): say it after the answer, not as the lead.")
+    if out.get("time_between"):
+        return ("Answer from `time_between`: for one patient, the two dates and the time between them; "
+                "for a group, the median and the range (across_patients) and how many patients had both "
+                "(patients_with_both of `count`). Say in plain words what was measured, from `from` to "
+                "`to`, and the unit.")
+    if out.get("over_time"):
+        return ("Answer from `over_time`: one row per period with its patients (and records). For a "
+                "trend, draw a bar or line chart with one point per period. Say what was counted and "
+                "for which group (`count`, what_was_counted).")
+    return ("Lead with `count` (distinct patients). Say what was counted from what_was_counted, in plain "
+            "words, and which spellings were included (matched).")
 
 
 def may_repeat(dataset: str, show) -> bool:
@@ -1098,15 +1117,21 @@ def _either(ident, S, clauses, base, out, matched, show) -> dict:
     so the count is exact inclusion-exclusion over Chiron's own counts of every overlap."""
     if len(clauses) > 4:
         raise AccessError("'any' across different variables works for up to 4 conditions.")
-    if show and set(show) - {"count"}:
-        raise AccessError("A breakdown or list of 'either' patients across different variables "
-                          "is not one Chiron cohort; count each condition instead.")
-    total, parts = 0, []
+    shown = set(show or {}) - {"count", "limit"}
+    if shown - EITHER_SHOWS:
+        raise AccessError("For 'either' patients across different variables Ask gives the count, a breakdown "
+                          "by one or two variables, their records, a ranking or figure per patient "
+                          "(per_patient), the time between two events (time_between) or patients per year "
+                          "(over_time); a list or a top-N is not one Chiron cohort, so count each condition "
+                          "or ask for one of those instead.")
+    total, parts, combos = 0, [], []
     for k in range(1, len(clauses) + 1):
         for combo in itertools.combinations(range(len(clauses)), k):
-            n = S._count(ident, build(ident, [clauses[i] for i in combo], base))
+            cd_k = build(ident, [clauses[i] for i in combo], base)
+            n = S._count(ident, cd_k)
             total += n if k % 2 else -n
             parts.append({"conditions": [i + 1 for i in combo], "patients": n})
+            combos.append((1 if k % 2 else -1, cd_k))
     out.update(count=total, matched=matched,
                what_was_counted="patients meeting at least one of: " + "; ".join(
                    f"({i + 1}) " + describe(ident, build(ident, [c], [])) for i, c in enumerate(clauses)),
@@ -1115,6 +1140,117 @@ def _either(ident, S, clauses, base, out, matched, show) -> dict:
                       "exclusion): Chiron cannot hold 'either' across different variables as one "
                       "cohort, so there is no single query to hand over."])
     out["how_to_answer"] = "Lead with `count`; say it combines the conditions with OR."
+    if shown and total:
+        notes = out["notes"]
+        if show.get("breakdown"):
+            out["breakdown"] = _either_breakdown(ident, S, combos, show, total)
+            notes.append("The breakdown is exact too: Chiron's breakdown of each condition and each overlap, "
+                         "combined group by group the same way.")
+        else:
+            either = _Either([build(ident, [c], base) for c in clauses])
+            out = _show(ident, S, either, show, out, notes)
+            out["how_to_answer"] = _how_to_answer(out) + " Say that the patients are those meeting at least one of the conditions."
+    return out
+
+
+EITHER_SHOWS = {"breakdown", "records", "per_patient", "time_between", "over_time"}
+EITHER_GROUPS = 60   # groups asked of each overlap's breakdown; more is refused rather than cut
+
+
+class _Either:
+    """Patients meeting at least one of several cohorts (match='any' across different
+    variables). No single Chiron cohort holds them, so the tools that read patients'
+    records take the union of each cohort's patients, every one found with Chiron's own
+    builder and the caller's permissions."""
+
+    def __init__(self, cds: list):
+        self.cds = cds
+
+
+def _cohort_ids(cu, cd) -> list:
+    """The patients (Chiron's row ids) of a cohort, or of every cohort of an _Either."""
+    if isinstance(cd, _Either):
+        seen: set = set()
+        for one in cd.cds:
+            seen.update(_subject_ids(cu, one))
+        return list(seen)
+    return _subject_ids(cu, cd)
+
+
+def _either_breakdown(ident, S, combos: list, show: dict, total: int) -> dict:
+    """A breakdown of 'either' patients: Chiron's breakdown of every overlap of the
+    conditions, combined group by group with inclusion-exclusion, so each figure is exact
+    distinct patients, as the count is. A variable with more groups than EITHER_GROUPS is
+    refused rather than cut, since a group left out of one overlap would make the sums wrong."""
+    ds = ident.dataset_id
+    by = show["breakdown"] if isinstance(show["breakdown"], list) else [show["breakdown"]]
+    ids = [_by_var(ident, b).cid for b in by]
+    two = len(ids) == 2
+    parts = []
+    for sign, cd in combos:
+        bd = S.chiron_breakdown(ds, cd, ids, EITHER_GROUPS)
+        if bd.get("error"):
+            raise AccessError(bd["error"])
+        if bd.get("omitted_rows") or bd.get("omitted_cols"):
+            raise AccessError("This variable has too many values to combine exactly for 'either' patients; break "
+                              "down by a variable with fewer values (gender, race, visit type), or count each "
+                              "condition.")
+        parts.append((sign, bd))
+
+    def keyer(dim: str):
+        parent: dict = {}
+
+        def find(x):
+            while parent.setdefault(x, x) != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for _, bd in parts:
+            for lab in bd.get(dim) or []:
+                vals = [D.norm(v) for v in (bd.get("merged_variants") or {}).get(lab, [lab])] + [D.norm(lab)]
+                for v in vals[1:]:
+                    a, b = find(vals[0]), find(v)
+                    if a != b:
+                        parent[a] = b
+        return find
+
+    rk = keyer("rows")
+    ck = keyer("cols") if two else None
+    labels: dict = {}
+    col_labels: dict = {}
+    totals: dict = {}
+    col_totals: dict = {}
+    cells: dict = {}
+    no_value: dict = {}
+    for sign, bd in parts:
+        for i, lab in enumerate(bd["rows"]):
+            k = rk(D.norm(lab))
+            labels.setdefault(k, lab)
+            totals[k] = totals.get(k, 0) + sign * int(bd["row_totals"][i])
+            if two:
+                for j, clab in enumerate(bd["cols"]):
+                    c = ck(D.norm(clab))
+                    col_labels.setdefault(c, clab)
+                    cells[(k, c)] = cells.get((k, c), 0) + sign * int(bd["cells"][i][j])
+        if two:
+            for j, clab in enumerate(bd["cols"]):
+                c = ck(D.norm(clab))
+                col_totals[c] = col_totals.get(c, 0) + sign * int(bd["col_totals"][j])
+        for name, v in (bd.get("no_value") or {}).items():
+            if v is not None:
+                no_value[name] = no_value.get(name, 0) + sign * int(v)
+    rows = sorted((k for k in totals if totals[k] > 0), key=lambda k: -totals[k])
+    out = {"dataset_id": ds, "cohort_total": total, "by": parts[0][1].get("by"),
+           "rows": [labels[k] for k in rows], "row_totals": [totals[k] for k in rows],
+           "no_value": no_value,
+           "note": ("Distinct patients meeting at least one of the conditions, exact: Chiron's breakdown of each "
+                    "condition and of each overlap, combined group by group (inclusion-exclusion). With a "
+                    "multi-value variable a patient can be in several groups.")}
+    if two:
+        cols = sorted((c for c in col_totals if col_totals[c] > 0), key=lambda c: -col_totals[c])
+        out.update(cols=[col_labels[c] for c in cols], col_totals=[col_totals[c] for c in cols],
+                   cells=[[cells.get((k, c), 0) for c in cols] for k in rows])
     return out
 
 
@@ -1163,6 +1299,12 @@ def _show(ident, S, cd, show: dict, out: dict, notes: list) -> dict:
         if isinstance(show["records"], dict) and show.get("limit") is not None and show["records"].get("limit") is None:
             show = dict(show, records=dict(show["records"], limit=show["limit"]))  # written beside records
         out["records"] = _records(ident, S, cd, show, int(out.get("count") or 0), notes)
+    elif show.get("per_patient") is not None:
+        out["per_patient"] = _per_patient(ident, S, cd, show, int(out.get("count") or 0), notes)
+    elif show.get("time_between") is not None:
+        out["time_between"] = _time_between(ident, S, cd, show, int(out.get("count") or 0), notes)
+    elif show.get("over_time") is not None:
+        out["over_time"] = _over_time(ident, S, cd, show, int(out.get("count") or 0), notes)
     elif show.get("results") is not None:
         spec = show["results"] if isinstance(show["results"], dict) else {"columns": show["results"]}
         words: list[str] = []
@@ -1224,6 +1366,10 @@ def _show(ident, S, cd, show: dict, out: dict, notes: list) -> dict:
         raise AccessError("show is {'count': true}, {'breakdown': [...]}, {'top': N, 'of': 'condition'}, "
                           "{'list': [fields], 'limit': N}, {'range': {'lab': 'HbA1c'}}, {'values': 'lab'}, "
                           "{'records': {'of': {'lab': 'HbA1c'}}} (one row per record, dated), "
+                          "{'per_patient': {'of': {'lab': 'HbA1c'}, 'stat': 'count', 'n': 5}} (patients ranked "
+                          "by how many such records, or a sum/average per patient), "
+                          "{'time_between': {'from': ..., 'to': ...}} (per patient, days or years), "
+                          "{'over_time': {'of': {'condition': 'asthma'}}} (patients per year), "
                           "{'results': {'columns': [...], 'sort': [...]}}, "
                           "{'report': {'name': ..., 'columns': [...], 'public': false}} or {'query_builder': true}.")
     return out
@@ -1490,28 +1636,7 @@ def _records(ident, S, cd, show: dict, count: int, notes: list) -> dict:
     unknown = sorted(set(spec) - {"of", "fields", "limit", "latest", "earliest", "order"})
     if unknown:
         raise AccessError(f"records does not take {', '.join(repr(k) for k in unknown)}. " + RECORDS_HELP)
-    of = spec["of"]
-    clause = None
-    if isinstance(of, dict):
-        # {"medication": "any"} or {"visit": null}: the kind alone, no name
-        bare = [k for k in of if D.norm(k) in TABLE_KEYS and of[k] in (None, "", "any", "all")]
-        if len(of) == 1 and bare:
-            of = bare[0]
-    if isinstance(of, dict):
-        clause = parse_condition(ident, of)
-        if clause.collection == "subject":
-            raise AccessError("records are a patient's visits, diagnoses, prescriptions, procedures or lab "
-                              "results; a patient's own fields come with show={'list': [...]}. " + RECORDS_HELP)
-        if clause.count_rule or clause.within:
-            raise AccessError("records takes the kind of record, its name and a value or date range; a count "
-                              "rule or timing between records belongs in `where`, which chooses the patients.")
-        coll = clause.collection
-    else:
-        coll = TABLE_KEYS.get(D.norm(str(of))) or _collection_named(ident, str(of))
-        if coll is None or coll == "subject" or coll == getattr(ident.dataset.root_collection, "permanent_id", None):
-            raise AccessError(f"{of!r} is not a kind of record. " + RECORDS_HELP)
-    if not _vars(ident, coll):
-        raise AccessError(f"This dataset has no {coll} records.")
+    coll, clause = _record_target(ident, spec["of"], "records", RECORDS_HELP)
     per = None
     for key in ("latest", "earliest"):
         if spec.get(key) is not None:
@@ -1545,17 +1670,22 @@ def _records(ident, S, cd, show: dict, count: int, notes: list) -> dict:
     if per and (date_var is None or date_var.concept.get_display_processor(cu) is None):
         raise AccessError(f"{coll} records have no date here, so latest/earliest cannot be chosen; "
                           "ask for the records without it.")
-    fields = _record_fields(ident, S, cu, coll, spec.get("fields"))
+    asked, want_age = _without_age(spec.get("fields"))
+    fields = _record_fields(ident, S, cu, coll, asked)
+    birth = _var(ident, "subject", "birthdate") if want_age else None
+    if want_age and (birth is None or date_var is None):
+        raise AccessError("The age at each record needs the patient's birthdate and the record's date; "
+                          "this dataset has no " + ("birthdate." if birth is None else f"date on {coll} records."))
     available = [_record_label(v) for v in _vars(ident, coll)
-                 if v.concept.get_display_processor(cu) is not None and not S._identifies_person(v.concept)]
-    labels = [_record_label(v) for v in fields]
+                 if v.concept.get_display_processor(cu) is not None and not S._identifies_person(v.concept)] + ["age"]
+    labels = [_record_label(v) for v in fields] + (["age"] if want_age else [])
     empty = {"of": kind, "columns": ["patient"] + labels, "rows": [],
              "total": 0, "returned": 0, "truncated": False, "patients": 0, "patients_in_group": count,
              "available_fields": available}
     if count == 0:
         return empty
 
-    ids = _subject_ids(cu, cd)
+    ids = _cohort_ids(cu, cd)
     if not ids:
         return empty
 
@@ -1594,6 +1724,13 @@ def _records(ident, S, cd, show: dict, count: int, notes: list) -> dict:
         dp = v.concept.get_display_processor(cu)
         columns.append(dp.sql_alchemy_map_in_query(getattr(table_for(v).c, v.cid)).label(f"f{len(columns)}"))
         after.append(dp.sql_alchemy_map_after_query)
+    if want_age:
+        bk, bexpr = _date_expr(cu, birth, getattr(table_for(birth).c, birth.cid))
+        dk, dexpr = _date_expr(cu, date_var, getattr(table_for(date_var).c, date_var.cid))
+        columns.append(_years_between(bk, bexpr, dk, dexpr).label(f"f{len(columns)}"))
+        after.append(None)
+        if "year" in (bk, dk):
+            notes.append("This account sees these dates only as years, so each age is the difference of the years.")
     where = []
     for var, f, _what in (clause.filters if clause else []):
         where.append(_sql_filter(getattr(table_for(var).c, var.cid), var, f))
@@ -1629,7 +1766,7 @@ def _records(ident, S, cd, show: dict, count: int, notes: list) -> dict:
     with engine.connect() as conn:
         total, patients, distinct_records = conn.execute(count_stmt).one()
         rows = conn.execute(paged).fetchall()
-    kinds = [None] * (skip + 1) + [v.kind for v in fields]
+    kinds = [None] * (skip + 1) + [v.kind for v in fields] + (["number"] if want_age else [])
     out_rows = []
     for r in rows:
         row = []
@@ -1661,6 +1798,607 @@ def _records(ident, S, cd, show: dict, count: int, notes: list) -> dict:
         result["records_distinct"] = int(distinct_records)
         notes.append(f"{int(total):,} rows for {int(distinct_records):,} records: a record with several values "
                      "of one column appears once per value. Count records, not rows.")
+    return result
+
+
+def _record_target(ident, of, word: str, help_text: str) -> tuple[str, "Clause | None"]:
+    """The collection (and the parsed condition, if 'of' names one) behind the 'of' of
+    records and per_patient: a kind of record, or an object naming one."""
+    clause = None
+    if isinstance(of, dict):
+        # {"medication": "any"} or {"visit": null}: the kind alone, no name
+        bare = [k for k in of if D.norm(k) in TABLE_KEYS and of[k] in (None, "", "any", "all")]
+        if len(of) == 1 and bare:
+            of = bare[0]
+    if isinstance(of, dict):
+        clause = parse_condition(ident, of)
+        if clause.collection == "subject":
+            raise AccessError(f"{word} are about a patient's visits, diagnoses, prescriptions, procedures or lab "
+                              "results; a patient's own fields come with show={'list': [...]}. " + help_text)
+        if clause.count_rule or clause.within:
+            raise AccessError(f"{word} takes the kind of record, its name and a value or date range; a count "
+                              "rule or timing between records belongs in `where`, which chooses the patients.")
+        coll = clause.collection
+    else:
+        coll = TABLE_KEYS.get(D.norm(str(of))) or _collection_named(ident, str(of))
+        if coll is None or coll == "subject" or coll == getattr(ident.dataset.root_collection, "permanent_id", None):
+            raise AccessError(f"{of!r} is not a kind of record. " + help_text)
+    if not _vars(ident, coll):
+        raise AccessError(f"This dataset has no {coll} records.")
+    return coll, clause
+
+
+PER_PATIENT_N, PER_PATIENT_MAX = 10, 100   # patients ranked by default, and at most
+PER_PATIENT_HELP = (
+    "show={'per_patient': {'of': {'lab': 'Systolic Blood Pressure'}, 'stat': 'count', 'n': 5}} ranks the "
+    "patients in `where` by how many such records each has, one row per patient (patient, count), most "
+    "first; 'of' is as in records (a kind of record, or an object naming one). 'stat' is 'count' (the "
+    "default) or 'sum', 'average', 'min', 'max' of a number in the record named by 'field' ('total claim "
+    "cost', 'value'); 'n' rows (10 by default, 100 at most); 'order': 'desc' (default) or 'asc' (fewest "
+    "first); 'by': 'year' gives one row per patient and year, for one patient or a small group.")
+_STATS = {"count": "count", "n": "count", "number": "count", "how many": "count",
+          "sum": "sum", "total": "sum", "sum of": "sum",
+          "average": "avg", "avg": "avg", "mean": "avg",
+          "min": "min", "lowest": "min", "minimum": "min", "smallest": "min",
+          "max": "max", "highest": "max", "maximum": "max", "largest": "max"}
+
+
+def _per_patient(ident, S, cd, show: dict, count: int, notes: list) -> dict:
+    """One row per patient with one figure over their records of one kind: how many (the
+    patient with the most readings), or the sum, average, lowest or highest of a number in
+    them (total cost per patient, the highest average pressure), ranked; or one row per
+    patient and year. Chiron's count rules choose patients by a count ("at least 3
+    visits") and its table engine aggregates inside a patient's row, but neither ranks
+    patients by a figure, so the model used to bisect thresholds with one slow cohort
+    query per step and ran out of time. Here the cohort's patients are taken with Chiron's
+    builder (conditions and permissions), then one grouped statement over the record
+    table with the same builder (its permission clause, the display mapping of the
+    number, the filters of 'of'). The rows carry the patient id, a year and numbers, so
+    they are as viewable as a patient list; an aggregate-only account is refused before
+    this by chiron_query's subject-level gate."""
+    from sqlalchemy import Integer, Numeric, cast, distinct, func, select
+
+    from chiron import models
+    from chiron.query_definition import Cohort
+    from chiron.query_engine.postgres.database import get_sql_alchemy_db_engine
+    from chiron.query_engine.postgres.sql_alchemy_queries.query_builder import SqlAlchemyQueryBuilder
+
+    spec = show["per_patient"]
+    if isinstance(spec, str):
+        spec = {"of": spec}
+    if not isinstance(spec, dict) or spec.get("of") in (None, "", {}):
+        raise AccessError("per_patient needs 'of', the kind of record. " + PER_PATIENT_HELP)
+    unknown = sorted(set(spec) - {"of", "stat", "field", "n", "order", "by", "limit"})
+    if unknown:
+        raise AccessError(f"per_patient does not take {', '.join(repr(k) for k in unknown)}. " + PER_PATIENT_HELP)
+    coll, clause = _record_target(ident, spec["of"], "per_patient", PER_PATIENT_HELP)
+    stat = _STATS.get(D.norm(str(spec.get("stat") or "count")))
+    if stat is None:
+        raise AccessError(f"'stat' is count, sum, average, min or max, not {spec.get('stat')!r}. " + PER_PATIENT_HELP)
+    try:
+        n = int(_num(spec.get("n", spec.get("limit", PER_PATIENT_N))))
+    except AccessError:
+        raise AccessError("'n' is a number of patients.") from None
+    n = max(1, min(n, PER_PATIENT_MAX))
+    order = str(spec.get("order") or "desc").strip().lower()
+    if order in ("desc", "descending", "highest", "most", "top", "largest"):
+        asc = False
+    elif order in ("asc", "ascending", "lowest", "fewest", "bottom", "smallest"):
+        asc = True
+    else:
+        raise AccessError("'order' is 'desc' (most first, the default) or 'asc' (fewest first).")
+    by = spec.get("by")
+    if by not in (None, "", "year"):
+        raise AccessError("'by' is 'year' or left out.")
+    by_year = by == "year"
+    if by_year and count > RECORD_PATIENTS:
+        raise AccessError(
+            f"Rows per patient and year are for one patient or a small group: this group has {count:,} "
+            f"patients, and they are given for up to {RECORD_PATIENTS:,}. Narrow the group in `where`, or "
+            "leave out 'by' to rank the patients by their total.")
+
+    cu = identity.checked_chironuser(ident)
+    coll_obj = models.Collection.objects.get(dataset=ident.dataset, permanent_id=coll)
+    date_var = _var(ident, coll, D.DATE_FIELD.get(coll, "")) if D.DATE_FIELD.get(coll) else None
+    if by_year and (date_var is None or date_var.concept.get_display_processor(cu) is None):
+        raise AccessError(f"{coll} records have no date here, so they cannot be counted per year.")
+    field_var = None
+    if stat != "count":
+        name = spec.get("field") or D.VALUE_FIELD.get(coll)
+        if not name:
+            raise AccessError(f"'{stat}' needs 'field', the number in each {coll} record to {stat} "
+                              "(for visits 'total claim cost'; for lab results 'value').")
+        field_var = resolve_field(ident, str(name), coll)
+        if field_var.collection != coll:
+            raise AccessError(f"{field_var.label()} is not a field of {coll} records.")
+        if field_var.kind != "number":
+            raise AccessError(f"{field_var.label()} is not a number, so it cannot be {'summed' if stat == 'sum' else 'averaged'}; "
+                              "per_patient with 'count' counts the records instead.")
+        if field_var.concept.get_display_processor(cu) is None:
+            raise AccessError(f"{field_var.label()} cannot be used here.")
+        S._require_columns_viewable(ident, [field_var.concept])
+    kind = _record_kind(coll, clause)
+    stat_word = {"count": "count", "sum": "total", "avg": "average", "min": "lowest", "max": "highest"}[stat]
+    field_words = _record_label(field_var) if field_var else None
+    label = stat_word if stat == "count" else f"{stat_word} {field_words}"
+    columns = ["patient"] + (["year"] if by_year else []) + [label]
+    empty = {"of": kind, "stat": stat_word, "field": field_words,
+             "columns": columns, "rows": [], "returned": 0, "patients": 0, "patients_in_group": count}
+    if count == 0:
+        return empty
+    whole = isinstance(cd, list) and not cd
+    ids = [] if whole else _cohort_ids(cu, cd)
+    if not whole and not ids:
+        return empty
+
+    b = SqlAlchemyQueryBuilder(cu, Cohort(cu, []), target_collection=coll_obj)
+    info = b.query_info
+    subject = info.get_sql_alchemy_table_for_subject()
+    rec = info.get_sql_alchemy_table_for_collection(coll_obj)
+    core = set(info.get_core_lookup_tables().get(coll, []))
+    joins: list = []
+    seen: set = set()
+
+    def table_for(var: Var):
+        t = info.get_sql_alchemy_table_for_concept(var.concept)
+        parent = subject if var.collection == "subject" else rec
+        if t is not parent and t not in core and id(t) not in seen:
+            joins.append((t, parent.c._id == t.c._collection_id))
+            seen.add(id(t))
+        return t
+
+    pid = _var(ident, "subject", "id")
+    if pid is not None and pid.concept.get_display_processor(cu) is not None:
+        patient_col = getattr(table_for(pid).c, pid.cid)
+    else:
+        patient_col = subject.c._subject_id
+    if stat == "count":
+        figure = func.count(distinct(rec.c._id))
+    else:
+        dp = field_var.concept.get_display_processor(cu)
+        value_col = dp.sql_alchemy_map_in_query(getattr(table_for(field_var).c, field_var.cid))
+        figure = {"sum": func.sum, "avg": func.avg, "min": func.min, "max": func.max}[stat](value_col)
+    group = [subject.c._id, patient_col]
+    cols = [subject.c._id.label("_sid"), patient_col.label("patient")]
+    if by_year:
+        year_col = cast(func.date_part("year", getattr(table_for(date_var).c, date_var.cid)), Integer)
+        group.append(year_col)
+        cols.append(year_col.label("year"))
+    cols.append(figure.label("figure"))
+    where = []
+    for var, f, _what in (clause.filters if clause else []):
+        where.append(_sql_filter(getattr(table_for(var).c, var.cid), var, f))
+
+    stmt = select(*cols)
+    stmt = b.from_builder.modify_statement(stmt)
+    stmt = b.where_builder.modify_statement(stmt)
+    for t, on in joins:
+        stmt = stmt.outerjoin(t, on)
+    stmt = stmt.where(rec.c._id.isnot(None), *where)
+    if not whole:
+        stmt = stmt.where(subject.c._id.in_(list(ids)))
+    grouped = stmt.group_by(*group).subquery("per_patient")
+    if by_year:
+        paged = select(grouped).order_by(grouped.c._sid, grouped.c.year).limit(RECORD_MAX)
+    else:
+        paged = select(grouped).order_by(grouped.c.figure.asc().nulls_last() if asc else grouped.c.figure.desc().nulls_last(),
+                                         grouped.c._sid).limit(n)
+    summary = select(func.count(distinct(grouped.c._sid)), func.count(), func.sum(grouped.c.figure),
+                     func.min(grouped.c.figure), func.max(grouped.c.figure), func.avg(grouped.c.figure),
+                     func.percentile_cont(0.5).within_group(grouped.c.figure)).select_from(grouped)
+    engine = get_sql_alchemy_db_engine(cu.dataset)
+    with engine.connect() as conn:
+        patients, groups, total, lo, hi, mean, median = conn.execute(summary).one()
+        rows = conn.execute(paged).fetchall()
+        tied = 0
+        if rows and not by_year and rows[-1].figure is not None:
+            last = round(float(rows[-1].figure), 6)
+            same = func.round(cast(grouped.c.figure, Numeric), 6) == last
+            at_cutoff = conn.execute(select(func.count()).select_from(grouped).where(same)).scalar()
+            tied = max(0, int(at_cutoff or 0) - sum(1 for r in rows if r.figure is not None and round(float(r.figure), 6) == last))
+
+    num = _figure
+    out_rows = []
+    for r in rows:
+        row = [r.patient]
+        if by_year:
+            row.append(int(r.year) if r.year is not None else None)
+        row.append(num(r.figure))
+        out_rows.append(row)
+    result = {
+        "of": kind, "stat": stat_word, "field": field_words,
+        "columns": columns, "rows": out_rows, "returned": len(out_rows),
+        "patients": int(patients or 0), "patients_in_group": count,
+        "order": "by patient, then year" if by_year else (f"{'lowest' if asc else 'highest'} {label} first"),
+    }
+    if stat == "count":
+        result["records"] = int(total or 0)
+    if patients:
+        result["across_patients"] = {"lowest": num(lo), "median": num(median), "mean": num(mean), "highest": num(hi)}
+    if by_year:
+        result["truncated"] = int(groups or 0) > len(out_rows)
+        if result["truncated"]:
+            notes.append(f"Only the first {len(out_rows)} of {int(groups):,} patient-year rows are here; narrow the group.")
+    else:
+        result["tied_at_cutoff"] = int(tied)
+        if tied:
+            notes.append(f"{tied:,} more patient{'s share' if tied != 1 else ' shares'} the last row's {label} "
+                         f"({num(rows[-1].figure)}), so the last place is shared; say so.")
+    if int(patients or 0) < count:
+        notes.append(f"{count - int(patients or 0):,} of the group's {count:,} patients have no such record and no row here"
+                     + ("; for 'fewest', they have zero." if asc else "."))
+    notes.append("The figures come from every record of these patients in one query; the patient id is the "
+                 "dataset's pseudonymous id. Name the patient by it when asked which patient.")
+    return result
+
+
+def _figure(v):
+    """A computed figure as JSON: a whole number as an int, others to three places."""
+    v = _plain_value(v)
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    return round(v, 3) if isinstance(v, float) else v
+
+
+AGE_WORDS = {"age", "age at the time", "age then", "age at event", "age at the event", "age at record",
+             "age at the record", "age at visit", "age at the visit", "age at diagnosis", "age at time",
+             "age at that time", "patient age", "age at each record", "age when recorded"}
+
+
+def _without_age(asked):
+    """(the fields asked for without the age, whether the age at each record was asked)."""
+    if isinstance(asked, str) and D.norm(asked) in AGE_WORDS:
+        return None, True
+    if isinstance(asked, list):
+        keep = [f for f in asked if D.norm(f) not in AGE_WORDS]
+        if len(keep) != len(asked):
+            return (keep or None), True
+    return asked, False
+
+
+def _date_expr(cu, var: Var, col) -> tuple[str, Any]:
+    """A date column as this account may use it: ('date', col) when its display keeps the
+    whole date, ('year', expression) when it shows only the year (a PHI date for a
+    de-identified account, or a year variable). Refused when it shows less (a decade)."""
+    dp = var.concept.get_display_processor(cu)
+    if dp is None:
+        raise AccessError(f"{var.label()} cannot be used by this account.")
+    mapped = dp.sql_alchemy_map_in_query(col)
+    if var.kind == "year":
+        return "year", mapped
+    if mapped is col:
+        return "date", col
+    method = ((getattr(dp, "get_map_settings", None) or (lambda: {}))() or {}).get("method")
+    if method == "to_year":
+        return "year", mapped
+    raise AccessError(f"{var.label()} is shown to this account only by decade, so a time between dates cannot be given.")
+
+
+def _years_between(ka: str, a, kb: str, b):
+    """Whole years from a to b: as an age when both are whole dates, else from the years."""
+    from sqlalchemy import Date, Integer, cast, func
+
+    if ka == "date" and kb == "date":
+        return cast(func.date_part("year", func.age(cast(b, Date), cast(a, Date))), Integer)
+    ya = a if ka == "year" else func.date_part("year", a)
+    yb = b if kb == "year" else func.date_part("year", b)
+    return cast(yb - ya, Integer)
+
+
+BETWEEN_N, BETWEEN_MAX = 10, 100
+BETWEEN_HELP = (
+    "show={'time_between': {'from': {'condition': 'asthma'}, 'to': {'medication': 'albuterol'}}} gives, for the "
+    "patients in `where`, the time from each one's first 'from' record to their first 'to' record on or after "
+    "it: a row per patient (both dates and the time) and the spread across patients. 'from' and 'to' are a "
+    "kind of record or an object naming one, as 'of' in records ('which': 'last' takes the latest), or "
+    "'birth' or 'death'. 'unit': 'days' (default), 'months' or 'years' (whole years, as an age); 'n' rows "
+    "(10 by default, 100 at most); 'order': 'asc' (shortest first, default) or 'desc'. Age at a diagnosis: "
+    "{'from': 'birth', 'to': {'condition': 'asthma'}, 'unit': 'years'}; diagnosis to death: {'from': "
+    "{'condition': 'lung cancer'}, 'to': 'death'}.")
+
+
+def _between_end(ident, end) -> dict:
+    """One end of time_between: a patient's own date (birth, death) or their first (or
+    last) record of a kind."""
+    which = "first"
+    if isinstance(end, dict) and "which" in end:
+        end = dict(end)
+        w = D.norm(end.pop("which") or "first")
+        if w in ("first", "earliest", "1st"):
+            which = "first"
+        elif w in ("last", "latest", "most recent", "newest"):
+            which = "last"
+        else:
+            raise AccessError("'which' is 'first' or 'last'. " + BETWEEN_HELP)
+    if isinstance(end, dict) and set(end) == {"field"}:
+        end = str(end["field"])
+    if isinstance(end, str) and D.norm(end) not in TABLE_KEYS and _collection_named(ident, end) is None:
+        try:
+            var = resolve_field(ident, end, "subject")
+        except AccessError:
+            raise AccessError(f"{end!r} is neither a kind of record nor one of the patient's dates "
+                              "(birth, death). " + BETWEEN_HELP) from None
+        if var.collection != "subject" or var.kind not in ("date", "year"):
+            raise AccessError(f"{var.label()} is not a date. " + BETWEEN_HELP)
+        words = {"birthdate": "birth", "deathdate": "death"}.get(var.short, var.label())
+        return {"subject": var, "words": words}
+    coll, clause = _record_target(ident, end, "time_between", BETWEEN_HELP)
+    short = D.DATE_FIELD.get(coll)
+    date_var = _var(ident, coll, short) if short else None
+    if date_var is None:
+        raise AccessError(f"{coll} records have no date here, so no time can be measured from them.")
+    kind = _record_kind(coll, clause)
+    return {"coll": coll, "clause": clause, "which": which, "date": date_var,
+            "words": f"{which} {kind.replace(' records', '', 1)}"}
+
+
+def _end_query(ident, cu, end: dict, ids, whole: bool, patient: bool = False, after=None):
+    """(subquery of _sid[, patient], d; 'date' or 'year') for one end of time_between:
+    each patient's date for it, with Chiron's builder (permissions) and the display
+    mapping of the date. `after` (a subquery and its kind) keeps only records on or after
+    that patient's date there."""
+    from sqlalchemy import Date, cast, func, select
+
+    from chiron import models
+    from chiron.query_definition import Cohort
+    from chiron.query_engine.postgres.sql_alchemy_queries.query_builder import SqlAlchemyQueryBuilder
+
+    if "subject" in end:
+        b = SqlAlchemyQueryBuilder(cu, Cohort(cu, []))
+        rec, coll = None, "subject"
+    else:
+        coll = end["coll"]
+        coll_obj = models.Collection.objects.get(dataset=ident.dataset, permanent_id=coll)
+        b = SqlAlchemyQueryBuilder(cu, Cohort(cu, []), target_collection=coll_obj)
+        rec = b.query_info.get_sql_alchemy_table_for_collection(coll_obj)
+    info = b.query_info
+    subject = info.get_sql_alchemy_table_for_subject()
+    core = set(info.get_core_lookup_tables().get(coll, []))
+    joins: list = []
+    seen: set = set()
+
+    def table_for(var: Var):
+        t = info.get_sql_alchemy_table_for_concept(var.concept)
+        parent = subject if var.collection == "subject" else rec
+        if t is not parent and t not in core and id(t) not in seen:
+            joins.append((t, parent.c._id == t.c._collection_id))
+            seen.add(id(t))
+        return t
+
+    var = end.get("subject") or end["date"]
+    kind, dexpr = _date_expr(cu, var, getattr(table_for(var).c, var.cid))
+    pick = func.max if end.get("which") == "last" else func.min
+    cols, group = [subject.c._id.label("_sid")], [subject.c._id]
+    if patient:
+        pid = _var(ident, "subject", "id")
+        if pid is not None and pid.concept.get_display_processor(cu) is not None:
+            pcol = getattr(table_for(pid).c, pid.cid)
+        else:
+            pcol = subject.c._subject_id
+        cols.append(pcol.label("patient"))
+        group.append(pcol)
+    cols.append(pick(dexpr).label("d"))
+    # Every table a column or a filter needs is known before the statement is built, so
+    # each is joined on its record (a lookup table left out of the joins would be a cross
+    # join, and its filter would then match any record).
+    conds = [dexpr.isnot(None)]
+    if rec is not None:
+        conds.append(rec.c._id.isnot(None))
+        for v, f, _w in (end["clause"].filters if end.get("clause") else []):
+            conds.append(_sql_filter(getattr(table_for(v).c, v.cid), v, f))
+    stmt = select(*cols)
+    stmt = b.from_builder.modify_statement(stmt)
+    stmt = b.where_builder.modify_statement(stmt)
+    for t, on in joins:
+        stmt = stmt.outerjoin(t, on)
+    if not whole:
+        conds.append(subject.c._id.in_(list(ids)))
+    if after is not None:
+        sub, sub_kind = after
+        stmt = stmt.join(sub, sub.c._sid == subject.c._id)
+        if kind == "date" and sub_kind == "date":
+            conds.append(cast(dexpr, Date) >= cast(sub.c.d, Date))
+        else:
+            mine = dexpr if kind == "year" else func.date_part("year", dexpr)
+            theirs = sub.c.d if sub_kind == "year" else func.date_part("year", sub.c.d)
+            conds.append(mine >= theirs)
+    return stmt.where(*conds).group_by(*group).subquery(), kind
+
+
+def _time_between(ident, S, cd, show: dict, count: int, notes: list) -> dict:
+    """Per patient, the time from one event to another: a first diagnosis to the first
+    prescription on or after it, birth to a diagnosis (the age at it), a diagnosis to
+    death, the first visit to the last. One row per patient (both dates and the time) for
+    the first `n`, ordered by the time, and the spread across every patient with both.
+    Each end is read with Chiron's builder (its permission clause) and the account's own
+    display mapping of the date: a date this account sees only as a year gives whole
+    years from the years. Agg accounts never get here (chiron_query's subject-level gate)."""
+    from sqlalchemy import Date, Integer, case, cast, func, select
+
+    from chiron.query_engine.postgres.database import get_sql_alchemy_db_engine
+
+    spec = show["time_between"]
+    if not isinstance(spec, dict) or spec.get("from") in (None, "", {}) or spec.get("to") in (None, "", {}):
+        raise AccessError("time_between needs 'from' and 'to'. " + BETWEEN_HELP)
+    unknown = sorted(set(spec) - {"from", "to", "unit", "n", "order", "limit"})
+    if unknown:
+        raise AccessError(f"time_between does not take {', '.join(repr(k) for k in unknown)}. " + BETWEEN_HELP)
+    unit = {"day": "days", "days": "days", "d": "days", "month": "months", "months": "months",
+            "year": "years", "years": "years", "age": "years", "y": "years"}.get(D.norm(spec.get("unit") or "days"))
+    if unit is None:
+        raise AccessError("'unit' is 'days', 'months' or 'years'.")
+    try:
+        n = int(_num(spec.get("n", spec.get("limit", BETWEEN_N))))
+    except AccessError:
+        raise AccessError("'n' is a number of patients.") from None
+    n = max(1, min(n, BETWEEN_MAX))
+    order = str(spec.get("order") or "asc").strip().lower()
+    if order not in ("asc", "desc", "shortest", "longest", "ascending", "descending"):
+        raise AccessError("'order' is 'asc' (shortest first, the default) or 'desc' (longest first).")
+    asc = order in ("asc", "shortest", "ascending")
+    a = _between_end(ident, spec["from"])
+    b = _between_end(ident, spec["to"])
+    constrained = "subject" not in b
+    words_to = b["words"] + (" on or after it" if constrained and "subject" not in a else "")
+    cu = identity.checked_chironuser(ident)
+    result = {"from": a["words"], "to": words_to, "unit": unit, "columns": ["patient", "from", "to", unit],
+              "rows": [], "returned": 0, "patients_in_group": count, "patients_with_from": 0, "patients_with_both": 0}
+    if count == 0:
+        return result
+    whole = isinstance(cd, list) and not cd
+    ids = [] if whole else _cohort_ids(cu, cd)
+    if not whole and not ids:
+        return result
+    fa, ka = _end_query(ident, cu, a, ids, whole, patient=True)
+    fb, kb = _end_query(ident, cu, b, ids, whole, after=(fa, ka) if constrained else None)
+    exact = ka == "date" and kb == "date"
+    if not exact and unit != "years":
+        unit = "years"
+        result["unit"] = unit
+        result["columns"][-1] = unit
+        notes.append("This account sees these dates only as years, so the time is in whole years, from the years.")
+    if exact and unit == "days":
+        diff = cast(fb.c.d, Date) - cast(fa.c.d, Date)
+    elif exact and unit == "months":
+        span = func.age(cast(fb.c.d, Date), cast(fa.c.d, Date))
+        diff = cast(func.date_part("year", span) * 12 + func.date_part("month", span), Integer)
+    else:
+        diff = _years_between(ka, fa.c.d, kb, fb.c.d)
+    pairs = (select(fa.c._sid, fa.c.patient, fa.c.d.label("from_date"), fb.c.d.label("to_date"), diff.label("diff"))
+             .select_from(fa.join(fb, fb.c._sid == fa.c._sid)).subquery("pairs"))
+    summary = select(func.count(), func.min(pairs.c.diff), func.percentile_cont(0.5).within_group(pairs.c.diff),
+                     func.avg(pairs.c.diff), func.max(pairs.c.diff),
+                     func.sum(case((pairs.c.diff < 0, 1), else_=0))).select_from(pairs)
+    rows_q = select(pairs).order_by(pairs.c.diff.asc() if asc else pairs.c.diff.desc(), pairs.c._sid).limit(n)
+    engine = get_sql_alchemy_db_engine(cu.dataset)
+    with engine.connect() as conn:
+        with_from = conn.execute(select(func.count()).select_from(fa)).scalar()
+        both, lo, median, mean, hi, negative = conn.execute(summary).one()
+        rows = conn.execute(rows_q).fetchall()
+    result["rows"] = [[r.patient, _figure(r.from_date), _figure(r.to_date), _figure(r.diff)] for r in rows]
+    result["returned"] = len(result["rows"])
+    result["patients_with_from"] = int(with_from or 0)
+    result["patients_with_both"] = int(both or 0)
+    result["order"] = "shortest first" if asc else "longest first"
+    if both:
+        result["across_patients"] = {"shortest": _figure(lo), "median": _figure(median),
+                                     "mean": _figure(mean), "longest": _figure(hi)}
+    if negative:
+        result["negative"] = int(negative)
+        notes.append(f"{int(negative):,} patient{'s have' if negative != 1 else ' has'} '{b['words']}' before "
+                     f"'{a['words']}' (a negative time); say so, it is how the data is recorded.")
+    if int(both or 0) < count:
+        notes.append(f"{int(both or 0):,} of the group's {count:,} patients have both; the others have no row "
+                     f"({count - int(with_from or 0):,} have no '{a['words']}').")
+    return result
+
+
+OVER_TIME_MAX = 600   # periods returned at most (50 years of months)
+OVER_TIME_HELP = (
+    "show={'over_time': {'of': {'condition': 'asthma'}}} gives, for the patients in `where`, one row per year: "
+    "how many of them have such a record in that year, and how many records. 'of' is as in records. "
+    "'by': 'year' (default) or 'month'; 'first': true counts each patient once, in the year of their first "
+    "such record (new cases per year).")
+
+
+def _over_time(ident, S, cd, show: dict, count: int, notes: list) -> dict:
+    """Patients (and records) of one kind per year or month, for a group: diagnoses per
+    year, visits per month, new cases per year. One grouped statement with Chiron's
+    builder (permissions) and the date as this account may see it; Chiron's breakdown
+    groups only by categories, so this used to take one count per year."""
+    from sqlalchemy import Integer, cast, distinct, func, select
+
+    from chiron import models
+    from chiron.query_definition import Cohort
+    from chiron.query_engine.postgres.database import get_sql_alchemy_db_engine
+    from chiron.query_engine.postgres.sql_alchemy_queries.query_builder import SqlAlchemyQueryBuilder
+
+    spec = show["over_time"]
+    if isinstance(spec, str):
+        spec = {"of": spec}
+    if not isinstance(spec, dict) or spec.get("of") in (None, "", {}):
+        raise AccessError("over_time needs 'of', the kind of record. " + OVER_TIME_HELP)
+    unknown = sorted(set(spec) - {"of", "by", "first"})
+    if unknown:
+        raise AccessError(f"over_time does not take {', '.join(repr(k) for k in unknown)}. " + OVER_TIME_HELP)
+    by = D.norm(spec.get("by") or "year")
+    if by not in ("year", "month"):
+        raise AccessError("'by' is 'year' or 'month'.")
+    first = bool(spec.get("first"))
+    coll, clause = _record_target(ident, spec["of"], "over_time", OVER_TIME_HELP)
+    short = D.DATE_FIELD.get(coll)
+    date_var = _var(ident, coll, short) if short else None
+    if date_var is None:
+        raise AccessError(f"{coll} records have no date here, so they cannot be counted over time.")
+    cu = identity.checked_chironuser(ident)
+    kind = _record_kind(coll, clause)
+    result = {"of": kind, "by": by, "columns": [by, "new patients" if first else "patients"] + ([] if first else ["records"]),
+              "rows": [], "patients_in_group": count}
+    if count == 0:
+        return result
+    whole = isinstance(cd, list) and not cd
+    ids = [] if whole else _cohort_ids(cu, cd)
+    if not whole and not ids:
+        return result
+    coll_obj = models.Collection.objects.get(dataset=ident.dataset, permanent_id=coll)
+    b = SqlAlchemyQueryBuilder(cu, Cohort(cu, []), target_collection=coll_obj)
+    info = b.query_info
+    subject = info.get_sql_alchemy_table_for_subject()
+    rec = info.get_sql_alchemy_table_for_collection(coll_obj)
+    core = set(info.get_core_lookup_tables().get(coll, []))
+    joins: list = []
+    seen: set = set()
+
+    def table_for(var: Var):
+        t = info.get_sql_alchemy_table_for_concept(var.concept)
+        parent = subject if var.collection == "subject" else rec
+        if t is not parent and t not in core and id(t) not in seen:
+            joins.append((t, parent.c._id == t.c._collection_id))
+            seen.add(id(t))
+        return t
+
+    dkind, dexpr = _date_expr(cu, date_var, getattr(table_for(date_var).c, date_var.cid))
+    if dkind == "year" and by == "month":
+        raise AccessError("This account sees these dates only as years, so they can be counted per year, not per month.")
+    year = dexpr if dkind == "year" else func.date_part("year", dexpr)
+    conds = [dexpr.isnot(None), rec.c._id.isnot(None)]
+    for v, f, _w in (clause.filters if clause else []):
+        conds.append(_sql_filter(getattr(table_for(v).c, v.cid), v, f))
+    if not whole:
+        conds.append(subject.c._id.in_(list(ids)))
+
+    def statement(*cols):
+        st = select(*cols)
+        st = b.from_builder.modify_statement(st)
+        st = b.where_builder.modify_statement(st)
+        for t, on in joins:
+            st = st.outerjoin(t, on)
+        return st.where(*conds)
+
+    if first:
+        firsts = statement(subject.c._id.label("_sid"), func.min(dexpr).label("d")).group_by(subject.c._id).subquery("firsts")
+        y = cast(firsts.c.d if dkind == "year" else func.date_part("year", firsts.c.d), Integer)
+        if by == "month":
+            per = func.to_char(firsts.c.d, "YYYY-MM")
+        else:
+            per = y
+        stmt = select(per.label("period"), func.count().label("patients")).select_from(firsts).group_by(per).order_by(per)
+    else:
+        per = func.to_char(dexpr, "YYYY-MM") if by == "month" else cast(year, Integer)
+        stmt = statement(per.label("period"), func.count(distinct(subject.c._id)).label("patients"),
+                         func.count(distinct(rec.c._id)).label("records")).group_by(per).order_by(per)
+    engine = get_sql_alchemy_db_engine(cu.dataset)
+    with engine.connect() as conn:
+        rows = conn.execute(stmt.limit(OVER_TIME_MAX + 1)).fetchall()
+    out_rows = [[_figure(r.period), int(r.patients)] + ([] if first else [int(r.records)]) for r in rows[:OVER_TIME_MAX]]
+    result["rows"] = out_rows
+    if len(rows) > OVER_TIME_MAX:
+        result["truncated"] = True
+        notes.append(f"Only the first {OVER_TIME_MAX} periods are here; ask per year, or for a shorter span.")
+    if out_rows:
+        result["span"] = [out_rows[0][0], out_rows[-1][0]]
+    notes.append("Each row counts distinct patients with such a record in that period"
+                 + (" for the first time (each patient once)." if first else "; a patient seen in several periods is in each."))
     return result
 
 

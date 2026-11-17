@@ -176,10 +176,24 @@ latest result, when something was diagnosed): chiron_query with show={"records":
 Each row pairs the record's date with its value. A table from chiron_run_table collapses a
 record column into a list of distinct values per patient, which loses that pairing, so use
 records for anything dated. Records are for one patient or a small group; the tool says
-the limit. For a value over time draw a line chart with one point per reading (dates as x,
-the unit in the label) and never summarise by decade when the readings are there. Not
-available yet (say so in one sentence, offer the nearest thing): the time between two of a
-patient's records, age at an event, cost totals per patient, counts per year per patient.
+the limit; "fields": [..., "age"] adds the patient's age at each record. For a value over
+time draw a line chart with one point per reading (dates as x, the unit in the label) and
+never summarise by decade when the readings are there.
+
+A figure per patient, ranked ("which patient has the most readings", "the fewest visits",
+"the highest total cost"): chiron_query with show={"per_patient": {"of": {"lab":
+"Systolic Blood Pressure"}, "n": 5}} ("stat": "sum", "average", "min" or "max" with
+"field": "total claim cost" or "value"; "order": "asc" for the fewest; "by": "year" for a
+patient's counts per year). Its first row answers "which patient": give the patient id and
+the figure, and say when others tie. The time between two events, per patient and across
+them: show={"time_between": {"from": {"condition": "asthma"}, "to": {"medication":
+"albuterol"}}} ("unit": "days", "months" or "years"; "from": "birth" for the age at an
+event; "to": "death"; "which": "last" for a patient's latest record of a kind). Patients
+per year or month: show={"over_time": {"of": {"condition": "asthma"}}} ("first": true for
+new patients per year). Never look for a highest or lowest by trying thresholds one query
+at a time, and never count year by year: one call answers it. Not available yet (say so in
+one sentence, offer the nearest thing): a patient's second or third record of a kind, and
+durations added up over records (total days on a medication).
 
 The dataset's variables, their exact concept ids and their filter types are listed after
 the question. Use them directly: do not call chiron_find_concepts or
@@ -368,7 +382,24 @@ What to show. These answer in the chat and change nothing in Chiron:
   "all" for other columns; "limit" up to 500. Each row pairs the record's date with its
   value, so dates and values are never two separate lists. Records are for one patient
   or a small group (the tool says the limit when a group is too large: then narrow it,
-  ask for latest N per patient, or give the range instead).
+  ask for latest N per patient, or give the range instead). "fields": [..., "age"] adds
+  the patient's age at each record ("how old was she at each visit").
+- a figure per patient, ranked ("which patient has the most systolic readings", "the
+  fewest visits", "the highest total cost"): show={"per_patient": {"of": {"lab":
+  "Systolic Blood Pressure"}, "n": 5}}; "stat": "sum", "average", "min" or "max" with
+  "field" ("total claim cost", "value"); "order": "asc" for the fewest; "by": "year" for
+  one patient's counts per year. Its first row answers "which patient": give the patient
+  id and the figure, and say when others tie.
+- the time between two events, per patient and across them ("how long from the asthma
+  diagnosis to the first albuterol", "age at diagnosis", "time from diagnosis to death"):
+  show={"time_between": {"from": {"condition": "asthma"}, "to": {"medication":
+  "albuterol"}}}; "unit": "days", "months" or "years"; "from": "birth" for an age at an
+  event; "to": "death"; "which": "last" for the latest record of a kind.
+- patients per year or month ("new asthma diagnoses per year", "visits per month"):
+  show={"over_time": {"of": {"condition": "asthma"}, "first": true}}; chart it with one
+  bar or point per period.
+Never look for a highest or lowest by trying thresholds one query at a time, and never
+count year by year: one per_patient or over_time call answers it.
 Write to Results or a report only when the user asks for their Results tab or a report.
 
 A patient's story ("trajectory", "timeline", "history"): records of their conditions,
@@ -379,10 +410,12 @@ visit can be listed on request. For a value over time: records of that lab, then
 chart below, one point per reading. Never summarise by decade or year when the individual
 readings are available; say "average" in a title whenever a figure is one.
 
-Not available yet, so say so in one sentence and offer the nearest thing: the time between
-two of a patient's records (days from diagnosis to death), age at an event, totals of costs
-per patient, counts per year per patient, and a breakdown of patients "either/or" across
-different variables (count each instead).
+"Either/or" across different variables (match "any") gives the count, a breakdown, records,
+per_patient, time_between or over_time; a list of those patients is not available.
+Not available yet, so say so in one sentence and offer the nearest thing: a patient's
+second or third record of a kind (the time from the first visit to the second), durations
+added up over records (total days on a medication), and a list of patients "either/or"
+across different variables (count, break down or rank them instead).
 
 Results tab and reports, all with chiron_query unless said otherwise:
 - "Put ... in my Results ...": show={"results": {"columns": [...], "sort": [...]}} with
@@ -1894,6 +1927,19 @@ def explain_claude_error(text: str) -> str:
 
 # How long one answer may take, and how often to show the browser the stream is alive.
 TURN_SECONDS = int(os.environ.get("CHIRON_MCP_TURN_SECONDS", "240"))
+
+
+def timeout_message(took: str, running: str | None) -> str:
+    """What the person reads when an answer runs out of time, by what was under way: a
+    Chiron query still running is not the model being busy, and asking the same question
+    again would only run out of time again."""
+    if running == "tool":
+        return (f"No answer after {took}: a Chiron query was still running, so it was stopped. A narrower "
+                "question (one lab or condition, a smaller group, a date range) usually answers in seconds.")
+    if running == "model":
+        return (f"No answer after {took}: the model was still working on it, so it was stopped. Ask again, "
+                "or ask a narrower question.")
+    return f"No answer after {took}, so it was stopped. Ask again, or ask a narrower question."
 PING_SECONDS = 10
 
 
@@ -1970,7 +2016,7 @@ def _claude_turn(cmd: list[str], username: str, allow_superuser: bool, outcome: 
                 outcome["answered"] = True
                 took = (f"{TURN_SECONDS // 60} minutes" if TURN_SECONDS >= 120
                         else f"{TURN_SECONDS} seconds")
-                message = f"No answer after {took}, so it was stopped. Claude may be busy; ask again."
+                message = timeout_message(took, trace.running())
                 trace.error(message)
                 yield from _drain(trace)
                 yield "error", message

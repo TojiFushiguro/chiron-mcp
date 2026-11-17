@@ -72,6 +72,75 @@ def sql(q: str) -> int:
         return int(cur.fetchone()[0])
 
 
+def sql_row(q: str) -> tuple:
+    import psycopg2
+
+    with psycopg2.connect(WAREHOUSE) as conn, conn.cursor() as cur:
+        cur.execute(f"set search_path to {SCHEMA}")
+        cur.execute(q)
+        return tuple(cur.fetchone() or ())
+
+
+def lkp_join(coll: str, short: str, alias: str, on: str) -> str:
+    return f'join "lkp_{P}{coll}__{short}" {alias} on {alias}._collection_id = {on}._id'
+
+
+def lcol(alias: str, coll: str, short: str) -> str:
+    return f'{alias}."{P}{coll}__{short}"'
+
+
+def per_patient_truths() -> dict:
+    """Figures per patient, time between events, counts per year and an 'either' breakdown
+    (the questions behind show=per_patient / time_between / over_time), straight from SQL."""
+    asthma = cond("lower(DESC) in ('asthma','asthm')")
+    pid = lkp_join("subject", "id", "i", "s")
+    top_id, top_n = sql_row(
+        f"select {lcol('i', 'subject', 'id')}, count(distinct o._id) from subject s {pid} "
+        f"join observation o on o._subject_id = s._subject_id {lkp_join('observation', 'description', 'd', 'o')} "
+        f"where lower({lcol('d', 'observation', 'description')}) like 'systolic%' group by 1 order by 2 desc, 1 limit 1")
+    cost_id, _ = sql_row(
+        f"select {lcol('i', 'subject', 'id')}, sum({lcol('k', 'encounter', 'total_claim_cost')}) from subject s {pid} "
+        f"join encounter e on e._subject_id = s._subject_id {lkp_join('encounter', 'total_claim_cost', 'k', 'e')} "
+        f"where s._subject_id in ({asthma}) group by 1 order by 2 desc, 1 limit 1")
+    median_days = sql_row(
+        f"with a as (select c._subject_id sid, min({lcol('t', 'condition', 'start')}) d from condition c "
+        f"  {lkp_join('condition', 'description', 'l', 'c')} {lkp_join('condition', 'start', 't', 'c')} "
+        f"  where lower({lcol('l', 'condition', 'description')}) in ('asthma', 'asthm') group by 1), "
+        f"m as (select m._subject_id sid, min({lcol('t', 'medication', 'start')}) d from medication m "
+        f"  {lkp_join('medication', 'description', 'l', 'm')} {lkp_join('medication', 'start', 't', 'm')} join a on a.sid = m._subject_id "
+        f"  where lower({lcol('l', 'medication', 'description')}) like 'albuterol%' and {lcol('t', 'medication', 'start')} >= a.d group by 1) "
+        f"select percentile_cont(0.5) within group (order by m.d - a.d) from a join m using (sid)")[0]
+    new_per_year = dict(sql_rows_plain(
+        f"select extract(year from d)::int, count(*) from (select c._subject_id, min({lcol('t', 'condition', 'start')}) d "
+        f"from condition c {lkp_join('condition', 'description', 'l', 'c')} {lkp_join('condition', 'start', 't', 'c')} "
+        f"where lower({lcol('l', 'condition', 'description')}) in ('asthma', 'asthm') group by 1) x group by 1"))
+    rich = subj("income", "VAL > 100000")
+    union = f"select _subject_id from ({asthma} union {rich}) u"
+    by_gender = dict(sql_rows_plain(
+        f"select upper({lcol('g', 'subject', 'gender')}), count(distinct s._subject_id) from subject s "
+        f"{lkp_join('subject', 'gender', 'g', 's')} where s._subject_id in ({union}) group by 1"))
+    years = sorted(new_per_year)[-6:-1]   # recent full years, not the current one
+    out = {
+        "_most_systolic_id": str(top_id), "_most_cost_id": str(cost_id),
+        "most_systolic": {"right": int(top_n)},
+        "albuterol_median_days": {"right": int(round(float(median_days)))},
+        "either_female": {"right": int(by_gender.get("F", 0))},
+        "either_male": {"right": int(by_gender.get("M", 0))},
+    }
+    for y in years:
+        out[f"new_asthma_{y}"] = {"right": int(new_per_year[y])}
+    return out
+
+
+def sql_rows_plain(q: str) -> list[tuple]:
+    import psycopg2
+
+    with psycopg2.connect(WAREHOUSE) as conn, conn.cursor() as cur:
+        cur.execute(f"set search_path to {SCHEMA}")
+        cur.execute(q)
+        return cur.fetchall()
+
+
 def cond(where: str) -> str:
     """Subjects with a condition matching `where` on the description column."""
     return (
@@ -1047,6 +1116,21 @@ CASES = [
                   forbid=["separate lists", "can't pair", "cannot pair", "by decade", "made-up"]),
              Case("t4", "how many females in the cohort?", "plain", pattern=r"\b1\b"),
          ]),
+    # --- figures per patient, time between events, counts per year, 'either' groups: the
+    # question that ran out of time on 2026-11-10 and its relatives (2026-11-17)
+    Case("most_readings", "which patient has the largest number of systolic bp values in their record?", "plain",
+         also=["most_systolic"], forbid=["No answer after", "cannot rank", "can't rank", "not able to rank"]),
+    Case("most_cost", "Which asthma patient has the highest total visit cost?", "plain",
+         forbid=["No answer after", "cannot", "can't"]),
+    Case("albuterol_wait", "For asthma patients, what is the median number of days from their first asthma "
+         "diagnosis to their first albuterol prescription after it?", "plain",
+         also=["albuterol_median_days"], forbid=["No answer after", "not available"]),
+    Case("records_age", "How old was the patient born on 1929-12-14 at each of her emergency visits?", "plain",
+         pattern=r"\b19\b", forbid=["No answer after", "not available"]),
+    Case("new_per_year", "How many patients were first diagnosed with asthma in each year? Chart it.", "plain",
+         forbid=["No answer after", "not available", "year by year"]),
+    Case("either_breakdown", "Break down the patients who have asthma or earn more than $100,000 a year by gender",
+         "plain", also=["either_female", "either_male"], forbid=["No answer after", "count each condition instead"]),
     # --- breakdowns, checked cell by cell
     Case("breakdown_1d", "Break down asthma patients by gender", "breakdown", "asthma"),
     # one asthma patient has no recorded gender; the answer must say so or the table
@@ -1156,16 +1240,25 @@ def main() -> int:
     if "--suggestions" in sys.argv:
         return run_suggestions([a for a in sys.argv[1:] if a != "--suggestions"])
     only = sys.argv[1:] and sys.argv[1]
-    cases = [c for c in CASES if not only or only in c.id]
+    cases = [c for c in CASES if not only or any(o and o in c.id for o in only.split(","))]
     print(f"computing ground truth from {SCHEMA} ...")
     truth = truths()
     grid = truth.pop("_grid")
+    pp = per_patient_truths()
+    most_id, cost_id = pp.pop("_most_systolic_id"), pp.pop("_most_cost_id")
+    truth.update(pp)
     for k, v in truth.items():
         print(f"  {k:24} {v}")
     print(f"  {'asthma gender x race':24} {grid}")
     sessions = {u: mint_session(u) for u in {c.user for c in cases} | {"admin", "demouser"}}
     SESSIONS.update(sessions)
     for c in cases:
+        if c.id == "most_readings":
+            c.pattern = re.escape(most_id[:8])
+        if c.id == "most_cost":
+            c.pattern = re.escape(cost_id[:8])
+        if c.id == "new_per_year":
+            c.also = sorted(k for k in truth if k.startswith("new_asthma_"))[-3:]
         if c.id == "breakdown_1d":
             c.cells = [truth["female_asthma"]["right"], truth["asthma_male"]["right"]]
         if c.id == "breakdown_2d":

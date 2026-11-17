@@ -958,7 +958,9 @@ def chiron_query(
 
     dataset: its name as the user says it ("Synthea 100k", "Synthea 300"). An unknown name
         is refused: then say that dataset is not available, never answer from another.
-    where: the conditions, all of which must hold (match="any": at least one). Each is
+    where: the conditions, all of which must hold (match="any": at least one; across
+        different variables that gives the count, a breakdown, records, per_patient,
+        time_between or over_time, not a list). Each is
         one object; plain words are fine, every spelling of a value is found for you:
           {"condition": "asthma"}                      has asthma (any record)
           {"condition": "COPD", "never": true}         has never had COPD
@@ -1010,6 +1012,27 @@ def chiron_query(
                                                       "limit" (200, at most 500). For values
                                                       over time, timelines, latest results.
                                                       One patient or a small group only.
+                                                      "fields": [..., "age"] adds the
+                                                      patient's age at each record.
+          {"per_patient": {"of": {"lab": "Systolic Blood Pressure"}, "n": 5}}
+                                                      patients ranked by how many such
+                                                      records each has ("which patient has
+                                                      the most"); "stat": "sum", "average",
+                                                      "min", "max" of "field" ("total claim
+                                                      cost", "value"); "order": "asc" for
+                                                      the fewest; "by": "year" for counts
+                                                      per patient and year (small groups).
+          {"time_between": {"from": {"condition": "asthma"}, "to": {"medication": "albuterol"}}}
+                                                      per patient, the time from the first
+                                                      'from' record to the first 'to' record
+                                                      on or after it, and its spread;
+                                                      "from": "birth" (an age at an event),
+                                                      "to": "death"; "which": "last";
+                                                      "unit": "days", "months", "years".
+          {"over_time": {"of": {"condition": "asthma"}, "first": true}}
+                                                      patients (and records) per year, or
+                                                      "by": "month"; "first": true counts
+                                                      each patient once (new cases).
           {"results": {"columns": [...], "sort": [...]}}   put them in the Results tab
           {"report": {"name": "X", "columns": [...]}}      save them as a report
           {"report": {"name": "X", "update": true}}         change that report's filters

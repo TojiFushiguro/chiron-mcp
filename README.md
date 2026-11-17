@@ -637,7 +637,42 @@ display processor (a PHI date for a de-identified account comes back as a year),
 `of`, and the permission clause again. Records are for one patient or a small group (100
 patients; 500 with latest/earliest) and are refused beyond that with the alternatives, never
 sampled; identifying columns are never in the default set and refused when asked for.
-`tests/records.py` compares the rows with a direct read of the warehouse.
+`"fields": [..., "age"]` adds the patient's age at each record. `tests/records.py` compares the
+rows with a direct read of the warehouse.
+
+### Figures per patient, time between events, counts over time
+
+Three more answers read patients' records with the same builder (the cohort's patients first,
+then one grouped statement with an empty cohort, its permission clause and each column's display
+mapping), because Chiron's engine counts patients and aggregates inside a patient's row but does
+not rank patients by a figure or group records by year. Without them the model tried thresholds
+one cohort query at a time ("at least 50 readings", "at least 80"...) and ran out of time: on
+2026-11-10 "which patient has the largest number of systolic bp values in their record?" took 14
+queries and was stopped at four minutes. It is now one call of about two seconds.
+
+- `show={"per_patient": {"of": {"lab": "Systolic Blood Pressure"}, "n": 5}}` ranks the cohort's
+  patients by how many such records each has, one row per patient (the dataset's pseudonymous
+  patient id and the figure), most first; `"stat"`: `"sum"`, `"average"`, `"min"`, `"max"` of a
+  number (`"field"`: `"total claim cost"`, `"value"`); `"order": "asc"` for the fewest; `"by":
+  "year"` for counts per patient and year (small groups). It says the spread across patients and
+  how many share the last place.
+- `show={"time_between": {"from": {"condition": "asthma"}, "to": {"medication": "albuterol"}}}`
+  gives, per patient, the time from their first `from` record to their first `to` record on or
+  after it, and the spread across every patient with both. `"from": "birth"` gives the age at an
+  event, `"to": "death"` the time to death, `"which": "last"` a patient's latest record of a kind;
+  `"unit"`: days, months or years. A date the account sees only as a year gives whole years from
+  the years.
+- `show={"over_time": {"of": {"condition": "asthma"}, "first": true}}` counts patients (and
+  records) per year or month; `"first": true` counts each patient once, in the year of their
+  first such record.
+
+Each works for "either" patients too (`match="any"` across different variables): the union of
+each condition's patients. A breakdown of them is exact as well, from Chiron's breakdown of each
+condition and each overlap, combined group by group. Aggregate-only accounts are refused all of
+them, as they are records. `tests/per_patient.py` compares every figure with SQL.
+
+When an answer reaches the four-minute limit, the message now says whether a Chiron query or
+the model was still working, and suggests a narrower question rather than asking again.
 
 ### What Ask can answer, and what it cannot yet
 
@@ -648,13 +683,17 @@ sampled; identifying columns are never in the default set and refused when asked
 | Lowest, highest, average of a lab or a number | `{"range"}` |
 | Which values exist (labs, units, visit types, payers) | `{"values"}` |
 | A list of patients with a few fields | `{"list"}` |
-| A patient's readings over time, visits, diagnoses, prescriptions, procedures, the latest or first result, a timeline | `{"records"}` |
+| A patient's readings over time, visits, diagnoses, prescriptions, procedures, the latest or first result, a timeline, the age at each | `{"records"}` |
+| Which patient has the most or fewest of something, a total or average per patient, counts per patient and year | `{"per_patient"}` |
+| The time between two events per patient and across them: diagnosis to treatment, age at an event, time to death | `{"time_between"}` |
+| Patients per year or month, new cases per year | `{"over_time"}` |
+| Patients with either of two things across different variables: the count, a breakdown, any of the three above | `match="any"` |
 | The Results tab, saved reports, the query builder | `{"results"}`, `{"report"}`, `{"query_builder"}` |
 
-Not available yet, and the model is told to say so in one sentence rather than improvise: the
-time between two of a patient's records (days from diagnosis to death), age at an event, totals
-of costs per patient, counts per year per patient, and a breakdown of patients who have either of
-two things across different variables (each is counted instead). The usage page counts the
+Not available yet, and the model is told to say so in one sentence rather than improvise: a
+patient's second or third record of a kind (the time from the first visit to the second),
+durations added up over records (total days on a medication), and a list of patients who have
+either of two things across different variables (they can be counted, broken down or ranked). The usage page counts the
 answers in which the model said something could not be done, and people can report an answer
 from under it (see [The usage page](#the-usage-page)); both are how the next gap is seen early.
 

@@ -434,6 +434,15 @@ class Trace:
             self._touch(s)
             return s
 
+    def running(self) -> str | None:
+        """What was still under way when an answer ran out of time: "tool" when a Chiron
+        call had not returned, "model" when the model was still writing, else None."""
+        with self._lock:
+            for s in reversed(self._order):
+                if s.get("status") == "running" and s.get("kind") in ("tool", "model"):
+                    return s["kind"]
+        return None
+
     def _end(self, s: dict, status: str = "ok", t1: float | None = None, **fields) -> None:
         s["t1"] = self.now() if t1 is None else t1
         if s.get("status") in (None, "running"):
@@ -1286,21 +1295,43 @@ def _data_checks(tr: Trace) -> list[dict]:
 
 
 def _record_figures(tr: Trace) -> set:
-    """Figures that are counts of records, not of patients: how many rows a tool returned,
-    and a records result's total, returned and patients. An answer about one patient's
-    readings rightly leads with one of these."""
+    """Figures that are not the cohort's count of patients: how many rows a tool returned,
+    a records result's total, returned and patients, and every figure of a per-patient
+    ranking, a time between events or a count over time. An answer about one patient's
+    readings, or naming the patient with the most, rightly leads with one of these."""
     out: set = set()
+
+    def whole(v) -> None:
+        if isinstance(v, bool):
+            return
+        if isinstance(v, int):
+            out.add(v)
+        elif isinstance(v, float) and v.is_integer():
+            out.add(int(v))
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                whole(x)
+        elif isinstance(v, dict):
+            for x in v.values():
+                whole(x)
+
     for s in tr._order:
         if s["kind"] != "tool":
             continue
         if s.get("rows"):
             out.add(int(s["rows"]))
         data = s.get("output")
-        rec = data.get("records") if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            continue
+        rec = data.get("records")
         if isinstance(rec, dict):
             for k in ("total", "returned", "patients"):
                 if isinstance(rec.get(k), int):
                     out.add(rec[k])
+        for key in ("per_patient", "time_between", "over_time"):
+            if isinstance(data.get(key), dict):
+                # every figure but the group's own size, which is the cohort's count
+                whole({k: v for k, v in data[key].items() if k != "patients_in_group"})
     return out
 
 

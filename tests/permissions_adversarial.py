@@ -300,6 +300,30 @@ def tool_layer(setup: dict) -> None:
         out = S.chiron_query(DS, where=asthma + [{"field": "last name", "is": last_name}],
                              show={"records": {"of": "visit"}})
         check(f"{tag} records of a person picked by name are refused (membership)", bool(err(out)) and not out.get("records"), err(out)[:100])
+        # Figures per patient, time between events, counts over time: patient ids and
+        # numbers, never a name; a name is never a field of them; a group picked by name
+        # is refused as it is for records.
+        for show in ({"per_patient": {"of": "visit", "n": 5}},
+                     {"per_patient": {"of": "visit", "stat": "sum", "field": "total claim cost", "n": 5}},
+                     {"time_between": {"from": "birth", "to": {"condition": "asthma"}, "unit": "years"}},
+                     {"over_time": {"of": {"condition": "asthma"}, "first": True}}):
+            key = next(iter(show))
+            out = S.chiron_query(DS, where=asthma, show=show)
+            res = out.get(key) or {}
+            check(f"{tag} chiron_query {key} carries no name column and no name ({show[key].get('stat', show[key].get('to', 'count'))})",
+                  not err(out) and res.get("rows") and not leak(out)["names"] and not leak(out)["keys"]
+                  and not any(c in ("first", "last", "name") for c in res.get("columns") or []), f"error={err(out)[:100]!r} columns={res.get('columns')}")
+        must_refuse(f"{tag} chiron_query per_patient with a name as its field",
+                    S.chiron_query(DS, where=asthma, show={"per_patient": {"of": "visit", "stat": "max", "field": "first name"}}))
+        must_refuse(f"{tag} chiron_query time_between ending at a name",
+                    S.chiron_query(DS, where=asthma, show={"time_between": {"from": "birth", "to": {"field": "last name"}}}))
+        out = S.chiron_query(DS, where=asthma + [{"field": "last name", "is": last_name}],
+                             show={"per_patient": {"of": "visit"}})
+        check(f"{tag} figures per patient for a person picked by name are refused (membership)",
+              bool(err(out)) and not out.get("per_patient"), err(out)[:100])
+        out = S.chiron_query(DS, where=[{"condition": "asthma"}, {"field": "last name", "is": last_name}], match="any",
+                             show={"per_patient": {"of": "visit"}})
+        check(f"{tag} nor through 'either' (match any)", bool(err(out)) and not out.get("per_patient"), err(out)[:100])
         other = S.chiron_count_cohort(NO_ACCESS_DS, [])
         check(f"{tag} another dataset (no row) is refused", bool(err(other)), err(other)[:120])
         other = S.chiron_datasets()
@@ -315,6 +339,10 @@ def tool_layer(setup: dict) -> None:
         must_refuse(f"{tag} chiron_query records (patient rows) is refused",
                     S.chiron_query(DS, where=[{"condition": "asthma"}, {"field": "birthdate", "before": "1932-01-01"}],
                                    show={"records": {"of": "visit"}}))
+        for show in ({"per_patient": {"of": "visit"}}, {"time_between": {"from": "birth", "to": {"condition": "asthma"}}},
+                     {"over_time": {"of": "visit"}}):
+            must_refuse(f"{tag} chiron_query {next(iter(show))} is refused",
+                        S.chiron_query(DS, where=[{"condition": "asthma"}], show=show))
         must_refuse(f"{tag} chiron_concept_values (exact counts per value)", S.chiron_concept_values(DS, GENDER))
         must_refuse(f"{tag} chiron_concept_values on the last-name field", S.chiron_concept_values(DS, LAST, cohort_def=cd))
         must_refuse(f"{tag} chiron_describe_concept with statistics", S.chiron_describe_concept(DS, RACE, include_statistics=True))
