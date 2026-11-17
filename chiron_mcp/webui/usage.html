@@ -381,7 +381,7 @@ function renderFlags(d) {
     const p = PEOPLE[f.user] || {};
     const by = el('span', 'flag-by');
     by.append(document.createTextNode('by '), el('b', '', p.name || f.user || '–'));
-    if (p.name) by.appendChild(el('small', '', ' ' + f.user));
+    if (p.name) by.title = f.user;
     head.appendChild(by);
     head.appendChild(el('span', 'dim', when(f.at) + ' · ' + (f.dataset || '–') + (f.model ? ' · ' + shortModel(f.model) : '')));
     const btn = el('button', 'btn small', f.status === 'handled' ? 'Reopen' : 'Mark handled'); btn.type = 'button';
@@ -640,7 +640,7 @@ function renderPersons() {
     if (!p.active) nm.appendChild(el('span', 'badge off', 'inactive'));
     if (p.username === a.identity) nm.appendChild(el('span', 'badge off', 'you'));
     idc.appendChild(nm);
-    if (p.name) idc.appendChild(el('div', 'meta', p.username));
+    if (p.name) nm.title = p.username;   // the sign-on id, on hover only: it looks like an email
     idc.appendChild(el('div', 'meta', p.last_login ? 'last sign-in ' + when(p.last_login) : 'never signed in'));
     row.appendChild(idc);
     const levels = el('div', 'levels');
