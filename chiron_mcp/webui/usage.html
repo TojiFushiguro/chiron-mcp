@@ -128,6 +128,12 @@
   .lvl.phi { border-color: var(--danger-line); background: var(--danger-bg); color: var(--danger); }
   .lvl.phi .ds { color: var(--danger); opacity: .75; }
   .lvl.none { color: var(--faint); border-style: dashed; }
+  .legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
+  .legend-item {
+    display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); line-height: 1.35;
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px;
+  }
+  .legend-item .lvl { flex: none; }
   .editor { grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-top: 4px; }
   .editor h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
   .editor table { background: var(--bg); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
@@ -152,6 +158,7 @@
     main { padding: 12px 14px 40px; }
     .grid-2 { grid-template-columns: 1fr; }
     .person { grid-template-columns: 1fr; gap: 8px; }
+    .legend { grid-template-columns: 1fr; }
     th, td { padding: 6px 8px; }
     .who small { display: none; }
   }
@@ -241,14 +248,12 @@
     <div class="toolbar">
       <input class="search" id="search" type="search" placeholder="Find a person" aria-label="Find a person">
       <span class="sub" id="people-count" style="color: var(--muted); font-size: 12.5px"></span>
-      <div class="spacer"></div>
-      <span style="color: var(--muted); font-size: 12.5px" id="ceiling-note"></span>
     </div>
+    <div class="legend" id="legend" aria-label="What each access level means"></div>
     <div class="msg warn hide" id="autocreate"></div>
     <div class="msg hide" id="access-msg"></div>
     <section class="card">
       <div id="persons"></div>
-      <p class="note">Everyone who passes the sign-on arrives with de-identified access. Edit sets a person's level per dataset; Make admin gives them this page and the right to change access. Full access and admin take a second click. Nobody can change their own admin.</p>
     </section>
     <section class="card hide" id="changes-card">
       <h2>Recent changes</h2>
@@ -376,8 +381,7 @@ function renderFlags(d) {
     const p = PEOPLE[f.user] || {};
     const by = el('span', 'flag-by');
     by.append(document.createTextNode('by '), el('b', '', p.name || f.user || '–'));
-    const ids = [p.name ? f.user : '', p.email].filter(Boolean).join(' · ');
-    if (ids) by.appendChild(el('small', '', ' ' + ids));
+    if (p.name) by.appendChild(el('small', '', ' ' + f.user));
     head.appendChild(by);
     head.appendChild(el('span', 'dim', when(f.at) + ' · ' + (f.dataset || '–') + (f.model ? ' · ' + shortModel(f.model) : '')));
     const btn = el('button', 'btn small', f.status === 'handled' ? 'Reopen' : 'Mark handled'); btn.type = 'button';
@@ -617,7 +621,7 @@ function renderPersons() {
   const q = ($('search').value || '').trim().toLowerCase();
   const people = (a.people || []).filter(p => !q || [p.name, p.username, p.email].some(x => (x || '').toLowerCase().includes(q)));
   $('people-count').textContent = people.length + ' of ' + (a.people || []).length + ' people';
-  $('ceiling-note').textContent = 'Ask shows at most ' + (ACCESS[a.ceiling] || a.ceiling) + ' here, whatever the row says';
+  renderLegend(a);
   const above = (a.datasets || []).filter(ds => ds.autocreate && (ds.auto_level === 'deid' || ds.auto_level === 'phi'));
   const ac = $('autocreate');
   if (above.length) {
@@ -636,7 +640,7 @@ function renderPersons() {
     if (!p.active) nm.appendChild(el('span', 'badge off', 'inactive'));
     if (p.username === a.identity) nm.appendChild(el('span', 'badge off', 'you'));
     idc.appendChild(nm);
-    idc.appendChild(el('div', 'meta', [p.name ? p.username : '', p.email].filter(Boolean).join(' · ')));
+    if (p.name) idc.appendChild(el('div', 'meta', p.username));
     idc.appendChild(el('div', 'meta', p.last_login ? 'last sign-in ' + when(p.last_login) : 'never signed in'));
     row.appendChild(idc);
     const levels = el('div', 'levels');
@@ -663,6 +667,22 @@ function renderPersons() {
     row.appendChild(act);
     if (a.can_change && OPEN_EDITOR === p.username) row.appendChild(editor(p, a));
     box.appendChild(row);
+  });
+}
+
+// One line per level, in the level's own colour; the ceiling only where it bites.
+function renderLegend(a) {
+  const box = $('legend');
+  box.textContent = '';
+  const capped = a.ceiling && a.ceiling !== 'phi';
+  [['agg', 'Counts and breakdowns only, never individual patients.'],
+   ['deid', 'Individual patients, without names or other identifiers.'],
+   ['phi', 'Everything, identifiable.' + (capped ? ' Through Ask, at most ' + (ACCESS[a.ceiling] || a.ceiling) + '.' : '')]
+  ].forEach(([level, text]) => {
+    const item = el('div', 'legend-item');
+    item.appendChild(el('span', 'lvl ' + level, ACCESS[level]));
+    item.appendChild(el('span', '', text));
+    box.appendChild(item);
   });
 }
 
