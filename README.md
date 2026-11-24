@@ -99,7 +99,10 @@ What the Ask tab does:
 - **Query · N** under any cohort answer: one click loads those filters into Chiron's query
   builder, and N is Chiron's own count for them.
 - **Tables and charts** for rankings and comparisons. Two-variable breakdowns chart as
-  grouped bars with a legend, so no bar is ever an unlabelled slice of the table.
+  grouped bars with a legend, so no bar is ever an unlabelled slice of the table. Every chart
+  has **Image** (a PNG with its title, the dataset and the date), **CSV** (the numbers behind
+  it) and **Table** buttons. Long names lie flat with each number at the end of its bar,
+  counts over time start at zero, and the colors are checked for color blindness.
 - **A trace under every answer**, for finding out why one is wrong. **Trace** opens it.
   It shows a timeline of each step
   (start-up, every model call, every Chiron tool call, the server's checks), plus time,
@@ -903,6 +906,7 @@ CHIRON_MCP_USERNAME=<agg-user>  .venv/bin/python tests/safety.py   # agg refusal
 .venv/bin/python tests/permissions_adversarial.py                  # every way past one's level: tools, questions, the server
 .venv/bin/python -m tests.protocol                                 # real MCP stdio handshake
 .venv/bin/python tests/usage.py; .venv/bin/python tests/header_login.py   # offline: the ledger, the header sign-on
+python3 -m http.server 8931   # then open http://localhost:8931/tests/charts_check.html: the page's charts
 ```
 
 `tests/ask_e2e.py` asks real questions through the Ask server exactly as the page does, and
@@ -1168,6 +1172,15 @@ other if their access changes later.
 "Export PDF" opens the conversation by itself in a new tab (`?view=<conversation>&print=1`,
 the same read-only view, with a print stylesheet) and prints it once the charts are drawn;
 the browser's print dialog saves it as a PDF.
+
+Charts are drawn in the page from the answer's ```` ```chart ```` block (one series as
+`data:[{x,y}]`, several as `x` + `series`; bar, line or doughnut), so a change to how they look
+applies to old answers too. A doughnut is drawn as ranked bars with each part's share; a value
+that is not a number (such as `<11`) is shown as written, without a bar; a line over years
+starts at zero when it counts things, and fits its range when it measures them (an average,
+one patient's readings). The Image and CSV buttons build their files in the browser.
+`tests/charts_check.html` draws about fifty awkward chart blocks with the page's own code
+and checks each one (names and numbers fit, hover, table, CSV, image, no markup runs).
 
 ## The question library
 

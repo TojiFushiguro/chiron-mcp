@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask chart checks</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  body { margin: 0; background: #eef1f3; color: #1d2328; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  #summary { position: sticky; top: 0; z-index: 9; background: #1d2328; color: #fff; padding: 10px 18px; font-weight: 600; }
+  #summary.fail { background: #b3261e; } #summary.pass { background: #2e7d32; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 16px; padding: 16px; }
+  .case { background: #fff; border: 1px solid #d9dfe3; border-radius: 12px; padding: 12px 14px; min-width: 0; }
+  .case.narrow { max-width: 360px; }
+  .case h3 { font-size: 13px; margin: 0 0 8px; }
+  .res { font: 11.5px/1.5 ui-monospace, Menlo, monospace; margin-top: 4px; }
+  .res .bad { color: #b3261e; font-weight: 700; } .res .ok { color: #2e7d32; }
+</style>
+</head>
+<body>
+<div id="summary">Running&hellip;</div>
+<div class="grid" id="grid"></div>
+<script>
+// Ask's chart code against the edge cases a model's chart block can bring.
+// Serve the repository root (python3 -m http.server) and open /tests/charts_check.html.
+// The page reads chiron_mcp/webui/index.html, takes its styles and its chart code (from
+// "const ISO_DAY" to "// --- traces"), draws every case below and checks it; the bar
+// at the top turns green or red, and window.chartChecks holds the results.
+(async () => {
+  const src = await (await fetch('../chiron_mcp/webui/index.html', { cache: 'no-store' })).text();
+  const css = src.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const pick = re => (css.match(re) || [''])[0];
+  const style = document.createElement('style');
+  style.textContent = [pick(/:root \{[\s\S]*?\n  \}/), pick(/\/\* a chart \(see Charts\)[\s\S]*?\.ac-table \.n \{[^}]*\}/),
+    pick(/\.answer table \{[^}]*\}/), pick(/\.answer th \{[^}]*\}/), pick(/\.answer td \{[^}]*\}/),
+    '.answer { font-size: 15px; line-height: 1.6; }'].join('\n');
+  document.head.appendChild(style);
+  window.DATASET = 'synthea-small'; window.DATASET_NAME = 'Synthea small';
+  window.el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  const code = src.slice(src.indexOf('const ISO_DAY = '), src.indexOf('// --- traces'));
+  const Charts = new Function(code + '\nreturn Charts;')();
+  const FONT = getComputedStyle(document.documentElement).getPropertyValue('--font').trim();
+  const g = document.createElement('canvas').getContext('2d');
+  const width = (t, f) => { g.font = f; return g.measureText(t).width; };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  const conds = ['Viral sinusitis (disorder)', 'Acute viral pharyngitis (disorder)', 'Acute bronchitis (disorder)',
+    'Body mass index 30+ - obesity (finding)', 'Prediabetes', 'Anemia (disorder)', 'Hypertension',
+    'Chronic sinusitis (disorder)', 'Otitis media', 'Streptococcal sore throat (disorder)'];
+  const counts = [7412, 5906, 5233, 3518, 3102, 2684, 2431, 1507, 1322, 1146];
+  const years = [14, 17, 15, 19, 21, 18, 23, 25, 22, 27, 29, 26, 31, 33, 30, 35, 37, 34, 39, 41, 33, 38, 42, 44, 40, 36];
+  const day = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const CASES = [
+    { name: 'top 10, long names', spec: { type: 'bar', title: 'Patients by condition (top 10)', label: 'Patients', data: conds.map((x, i) => ({ x, y: counts[i] })) },
+      want: { horizontal: true, labelled: true, n: 10 } },
+    { name: 'counts per year', spec: { type: 'line', title: 'New type 2 diabetes diagnoses per year', label: 'Patients', data: years.map((y, i) => ({ x: String(2000 + i), y })) },
+      want: { zero: true, n: 26 } },
+    { name: 'grouped bars', spec: { type: 'bar', title: 'Asthma patients by race and gender', label: 'Patients', x: ['White', 'Black', 'Asian', 'Native', 'Other'],
+      series: [{ label: 'Female', y: [288, 73, 41, 6, 12] }, { label: 'Male', y: [244, 73, 38, 4, 9] }] }, want: { legend: 2, n: 5 } },
+    { name: 'doughnut as parts', spec: { type: 'doughnut', title: 'Patients by race', label: 'Patients', data: [{ x: 'White', y: 8186 }, { x: 'Black', y: 812 },
+      { x: 'Asian', y: 702 }, { x: 'Other', y: 213 }, { x: 'Native', y: 72 }, { x: 'Hawaiian', y: 15 }] }, want: { horizontal: true, parts: true, n: 6, csvHead: 'Category,Patients,Share (%)' } },
+    { name: 'one patient, readings', spec: { type: 'line', title: 'Systolic blood pressure, one patient', label: 'mmHg',
+      data: [['2015-02-10', 124], ['2016-03-02', 131], ['2017-11-08', 138], ['2019-06-19', 139], ['2021-10-05', 146], ['2023-05-24', 129], ['2025-07-30', 129]].map(([x, y]) => ({ x, y })) },
+      want: { zero: false, n: 7, tipHead: 'Feb 10, 2015' } },
+    { name: 'empty', spec: { type: 'bar', title: 'Nothing here', data: [] }, want: { empty: true } },
+    { name: 'all suppressed', spec: { type: 'bar', title: 'Small groups', label: 'Patients', data: [{ x: 'A', y: '<11' }, { x: 'B', y: '<11' }] }, want: { empty: true, table: 2 } },
+    { name: 'some suppressed', spec: { type: 'bar', title: 'Patients by county', label: 'Patients', data: [{ x: 'Hamilton County', y: 420 }, { x: 'Butler County', y: '<11' }, { x: 'Clermont County', y: 37 }] },
+      want: { n: 3, texts: ['420', '<11', '37'] } },
+    { name: 'one bar', spec: { type: 'bar', title: 'Asthma', label: 'Patients', data: [{ x: 'Asthma', y: 845 }] }, want: { n: 1 } },
+    { name: 'all zero', spec: { type: 'bar', title: 'No cases', label: 'Patients', data: [{ x: 'Measles', y: 0 }, { x: 'Mumps', y: 0 }, { x: 'Rubella', y: 0 }] }, want: { n: 3 } },
+    { name: 'negative changes', spec: { type: 'bar', title: 'Change in patients since last year', label: 'Change', data: [{ x: 'Asthma', y: 42 }, { x: 'COPD', y: -17 }, { x: 'Flu', y: -3 }, { x: 'Gout', y: 5 }] },
+      want: { n: 4, axis: true } },
+    { name: 'decimals', spec: { type: 'bar', title: 'Visits per patient', label: 'Average visits', data: [{ x: 'Group A', y: 2.345 }, { x: 'Group B', y: 0.0123 }, { x: 'Group C', y: 123.456 }] },
+      want: { texts: ['2.35', '0.0123', '123.5'] } },
+    { name: 'huge numbers', spec: { type: 'bar', title: 'Claims paid', label: 'Dollars', x: ['2023', '2024'], series: [{ label: 'Paid', y: [1234567890, 987654321] }, { label: 'Billed', y: [2234567890, 1987654321] }] },
+      want: { legend: 2 } },
+    { name: 'numbers written as text', spec: { type: 'bar', title: 'Written as text', label: 'Patients', data: [{ x: 'A', y: '1,234' }, { x: 'B', y: '12.5%' }, { x: 'C', y: '$5,000' }, { x: 'D', y: ' 77 ' }] },
+      want: { values: [1234, 12.5, 5000, 77], texts: ['1,234', '12.5%', '$5,000', '77'] } },
+    { name: 'years out of order', spec: { type: 'line', title: 'Shuffled years', label: 'Patients', data: [{ x: '2010', y: 5 }, { x: '2000', y: 1 }, { x: '2005', y: 3 }] },
+      want: { labels: ['2000', '2005', '2010'] } },
+    { name: 'years with gaps', spec: { type: 'line', title: 'Gaps', label: 'Patients', data: [{ x: '2000', y: 4 }, { x: '2001', y: null }, { x: '2002', y: 6 }, { x: '2010', y: 9 }] }, want: { n: 4 } },
+    { name: 'average per year', spec: { type: 'line', title: 'Average age at diagnosis', label: 'Average age', data: [55.2, 56.1, 54.8, 57.3, 58.0].map((y, i) => ({ x: String(2018 + i), y })) },
+      want: { zero: false } },
+    { name: 'two lines', spec: { type: 'line', title: 'Diagnoses per year by gender', label: 'Patients', x: ['2019', '2020', '2021', '2022'], series: [{ label: 'Female', y: [20, 25, 31, 30] }, { label: 'Male', y: [12, 14, 15, 19] }] },
+      want: { legend: 2 } },
+    { name: 'lines ending together', spec: { type: 'line', title: 'Crowded ends', label: 'Patients', x: ['2020', '2021', '2022'], series: [{ label: 'A', y: [10, 20, 30] }, { label: 'B', y: [12, 18, 30] }, { label: 'C', y: [5, 9, 31] }] },
+      want: { legend: 3 } },
+    { name: '35 long names', spec: { type: 'bar', title: 'Many conditions', label: 'Patients', data: Array.from({ length: 35 }, (_, i) => ({ x: `Condition number ${i + 1} (disorder)`, y: 2000 - i * 50 })) },
+      want: { horizontal: true, n: 35 } },
+    { name: '60 short names', spec: { type: 'bar', title: 'Patients by age', label: 'Patients', data: Array.from({ length: 60 }, (_, i) => ({ x: String(i), y: 100 + ((i * 37) % 90) })) },
+      want: { horizontal: false, n: 60 } },
+    { name: 'a very long name', spec: { type: 'bar', title: 'Long', label: 'Patients', data: [{ x: 'Malignant neoplasm of the upper outer quadrant of the left female breast, with lymph node involvement and distant metastases (disorder)', y: 12 }, { x: 'Short', y: 30 }] },
+      want: { horizontal: true, clipped: true } },
+    { name: 'markup in names', spec: { type: 'bar', title: '<img src=x onerror="window.pwned=1">Title', label: '<b>Patients</b>', data: [{ x: '<script>window.pwned=2<\/script>', y: 3 }, { x: '<img src=x onerror="window.pwned=3">', y: 4 }] },
+      want: { noMarkup: true } },
+    { name: 'formulas in names', spec: { type: 'bar', title: 'Formulas', label: 'Patients', data: [{ x: '=HYPERLINK("http://x","y")', y: 1 }, { x: '+cmd', y: 2 }, { x: '-1', y: 3 }, { x: '@SUM(A1)', y: 4 }] },
+      want: { csvGuard: true } },
+    { name: 'ten series', spec: { type: 'bar', title: 'Ten series', label: 'Patients', x: ['A', 'B', 'C'], series: Array.from({ length: 10 }, (_, i) => ({ label: `Series name ${i + 1}`, y: [i + 1, i + 2, i + 3] })) },
+      want: { legend: 10 } },
+    { name: 'type area', spec: { type: 'area', title: 'Area', label: 'Patients', data: [{ x: '2020', y: 1 }, { x: '2021', y: 2 }] }, want: { type: 'line' } },
+    { name: 'type radar', spec: { type: 'radar', title: 'Radar', label: 'Patients', data: [{ x: 'A', y: 1 }, { x: 'B', y: 2 }] }, want: { type: 'bar' } },
+    { name: 'type pie', spec: { type: 'pie', title: 'Pie', label: 'Patients', data: [{ x: 'A', y: 1 }, { x: 'B', y: 3 }] }, want: { parts: true } },
+    { name: 'no type, no title', spec: { data: [{ x: 'A', y: 1 }, { x: 'B', y: 2 }] }, want: { n: 2 } },
+    { name: 'not a chart: array', spec: [1, 2, 3], want: { none: true } },
+    { name: 'not a chart: string', spec: 'chart', want: { none: true } },
+    { name: 'not a chart: null', spec: null, want: { none: true } },
+    { name: 'ragged series', spec: { type: 'bar', title: 'Ragged', label: 'Patients', x: ['A', 'B', 'C'], series: [{ label: 'Short', y: [1] }, { y: [1, 2, 3, 4, 5] }, { label: 'Not a list', y: 'x' }] },
+      want: { legend: 3 } },
+    { name: 'odd x values', spec: { type: 'bar', title: 'Odd x', label: 'Patients', data: [{ x: null, y: 1 }, { x: '', y: 2 }, { x: 7, y: 3 }, { x: 'Dup', y: 4 }, { x: 'Dup', y: 5 }, { y: 6 }] },
+      want: { labels: ['(blank)', '(blank)', '7', 'Dup', 'Dup', '(blank)'] } },
+    { name: 'rows as pairs', spec: { type: 'bar', title: 'Pairs', label: 'Patients', data: [['Asthma', 845], ['COPD', 199]] }, want: { values: [845, 199] } },
+    { name: 'readings in one week', spec: { type: 'line', title: 'Heart rate, one patient', label: 'Beats per minute', data: [1, 2, 3, 5, 7].map((d, i) => ({ x: day(2024, 3, d), y: 70 + i })) }, want: { n: 5 } },
+    { name: 'readings in one year', spec: { type: 'line', title: 'Weight, one patient', label: 'kg', data: [1, 3, 5, 8, 11].map((m, i) => ({ x: day(2024, m, 15), y: 80 - i })) }, want: { zero: false } },
+    { name: 'one date twice', spec: { type: 'line', title: 'Same day', label: 'mmHg', data: [{ x: '2024-05-01', y: 120 }, { x: '2024-05-01', y: 130 }] }, want: { n: 2 } },
+    { name: '200 readings', spec: { type: 'line', title: 'Glucose, one patient', label: 'mg/dL', data: Array.from({ length: 200 }, (_, i) => ({ x: day(2010 + Math.floor(i / 12), (i % 12) + 1, 1), y: 90 + ((i * 13) % 40) })) },
+      want: { n: 200 } },
+    { name: 'one year twice', spec: { type: 'line', title: 'One year', label: 'Patients', data: [{ x: '2020', y: 3 }, { x: '2020', y: 5 }] }, want: { n: 2 } },
+    { name: 'one point line', spec: { type: 'line', title: 'One point', label: 'Patients', data: [{ x: 'Now', y: 3 }] }, want: { n: 1, centred: true } },
+    { name: 'twelve upright, wide numbers', spec: { type: 'bar', title: 'Upright', label: 'Dollars', data: Array.from({ length: 12 }, (_, i) => ({ x: `Q${i + 1}`, y: 123456789 + i })) },
+      want: { horizontal: false } },
+    { name: 'a 300-character title', spec: { type: 'bar', title: 'A '.repeat(150).trim(), label: 'Patients', data: [{ x: 'A', y: 1 }] }, want: { png: true } },
+    { name: 'negative doughnut', spec: { type: 'doughnut', title: 'Not parts', label: 'Change', data: [{ x: 'A', y: 5 }, { x: 'B', y: -2 }] }, want: { parts: false } },
+    { name: 'zero doughnut', spec: { type: 'doughnut', title: 'Zero total', label: 'Patients', data: [{ x: 'A', y: 0 }, { x: 'B', y: 0 }] }, want: { parts: false } },
+    { name: 'narrow: top 10', narrow: true, spec: { type: 'bar', title: 'Patients by condition (top 10)', label: 'Patients', data: conds.map((x, i) => ({ x, y: counts[i] })) },
+      want: { horizontal: true, labelled: true } },
+    { name: 'narrow: grouped', narrow: true, spec: { type: 'bar', title: 'Asthma patients by race and gender', label: 'Patients', x: ['White', 'Black', 'Asian', 'Native', 'Other'],
+      series: [{ label: 'Female', y: [288, 73, 41, 6, 12] }, { label: 'Male', y: [244, 73, 38, 4, 9] }] }, want: { legend: 2 } },
+  ];
+
+  const grid = document.getElementById('grid');
+  const results = [];
+  for (const c of CASES) {
+    const box = el('div', 'case' + (c.narrow ? ' narrow' : ''));
+    box.appendChild(el('h3', null, c.name));
+    const answer = el('div', 'answer');
+    box.appendChild(answer);
+    const res = el('div', 'res');
+    box.appendChild(res);
+    grid.appendChild(box);
+    let card = null, err = null;
+    try { card = Charts.card(c.spec); if (card) answer.appendChild(card); } catch (e) { err = e; }
+    Object.assign(c, { box, answer, res, card, err });
+  }
+  await sleep(900);   // animations done, first resize handled
+  await frames();
+
+  for (const c of CASES) {
+    const out = [];
+    const ok = (cond, msg) => out.push([!!cond, msg]);
+    const w = c.want || {};
+    ok(!c.err, 'no error' + (c.err ? ': ' + c.err.message : ''));
+    if (w.none) { ok(c.card === null, 'not a chart: no card'); finish(c, out); continue; }
+    const card = c.card, s = Charts._read(c.spec);
+    ok(card instanceof HTMLElement, 'card made');
+    if (!card) { finish(c, out); continue; }
+    ok(card.scrollWidth <= card.clientWidth + 1, 'nothing sticks out sideways');
+    if (w.labels) ok(JSON.stringify(s.labels) === JSON.stringify(w.labels), 'labels ' + JSON.stringify(s.labels));
+    if (w.values) ok(JSON.stringify(s.series[0].values) === JSON.stringify(w.values), 'values ' + JSON.stringify(s.series[0].values));
+    if (w.texts) ok(JSON.stringify(s.series[0].texts) === JSON.stringify(w.texts), 'texts ' + JSON.stringify(s.series[0].texts));
+    if (w.type) ok(s.type === w.type, 'drawn as ' + s.type);
+    if (w.parts !== undefined) ok(s.parts === w.parts, 'parts ' + s.parts);
+    if (w.zero !== undefined) ok(s.zero === w.zero, (w.zero ? 'starts at zero' : 'fitted axis') + ' (' + s.zero + ')');
+    if (w.noMarkup) {
+      ok(!card.querySelector('img, script, b'), 'names stay text');
+      ok(!window.pwned, 'no script ran');
+      ok(card.querySelector('.ac-title').textContent.startsWith('<img'), 'title shown as written');
+    }
+    if (w.csvGuard) {
+      const csv = Charts._csv(s);
+      ok(csv.includes(`"'=HYPERLINK(""http://x"",""y"")"`) && csv.includes("'+cmd") && csv.includes("'-1") && csv.includes("'@SUM(A1)"), 'CSV formulas neutralized');
+    }
+    if (w.empty) {
+      ok(!card._chart && card.querySelector('.ac-note'), 'empty: a note and no chart');
+      ok(card.querySelector('.ac-btn[title^="Download this chart"]').offsetParent === null, 'empty: no Image button');
+      if (w.table) {
+        card.querySelector('.ac-btn[aria-pressed]').click();
+        ok(card.querySelectorAll('.ac-table tbody tr').length === w.table, 'table rows ' + card.querySelectorAll('.ac-table tbody tr').length);
+      }
+      finish(c, out); continue;
+    }
+    const ch = card._chart;
+    ok(ch && ch.width > 0 && ch.height > 0, 'chart drawn');
+    if (!ch) { finish(c, out); continue; }
+    if (w.n !== undefined) ok(s.n === w.n, 'n = ' + s.n);
+    if (w.horizontal !== undefined) ok((ch.options.indexAxis === 'y') === w.horizontal, 'sideways ' + (ch.options.indexAxis === 'y'));
+    if (w.legend) ok(card.querySelectorAll('.ac-key').length === w.legend, 'legend keys ' + card.querySelectorAll('.ac-key').length);
+    if (w.axis) ok(ch.scales.y.options.display !== false, 'value axis shown');
+    if (w.centred) { const p = ch.getDatasetMeta(0).data[0]; ok(p.x > ch.chartArea.left + 40 && p.x < ch.chartArea.right - 40, 'a lone point sits in the middle'); }
+    // names fit their column (sideways bars)
+    if (ch.options.indexAxis === 'y') {
+      const ys = ch.scales.y, f = `400 12.5px ${FONT}`;
+      const widest = ys.ticks.reduce((m, t) => Math.max(m, width(String(t.label), f)), 0);
+      ok(ys.left >= -0.5 && widest + 8 <= ys.width + 1.5, `names fit (${Math.round(widest)} in ${Math.round(ys.width)})`);
+      if (w.clipped) ok(ys.ticks.some(t => String(t.label).endsWith('…')), 'a long name is cut with an ellipsis');
+      // numbers at the bar ends stay inside the chart
+      if (w.labelled) {
+        const meta = ch.getDatasetMeta(0), vf = `500 12.5px ${FONT}`;
+        const far = meta.data.reduce((m, bar, i) => Math.max(m, bar.x + 7 + width(s.series[0].texts[i], vf) + (s.parts ? width(' · 82%', `400 12.5px ${FONT}`) : 0)), 0);
+        ok(far <= ch.width + 0.5, `numbers fit (${Math.round(far)} of ${ch.width})`);
+        ok(ch.scales.x.options.display === false, 'no value axis: every bar has its number');
+      }
+    }
+    // hover: the box opens with the first category
+    const meta = ch.getDatasetMeta(0), first = meta.data.findIndex(p => p && isFinite(p.x) && isFinite(p.y));
+    if (first >= 0) {
+      const p = meta.data[first], r = ch.canvas.getBoundingClientRect();
+      ch.canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + p.x, clientY: r.top + (ch.options.indexAxis === 'y' ? p.y : (p.y + (p.base ?? p.y)) / 2), bubbles: true }));
+      await frames(); await sleep(30);
+      const tip = card.querySelector('.ac-tip');
+      ok(tip.style.opacity === '1' && tip.textContent.length > 0, 'hover box opens');
+      if (w.tipHead) ok(tip.querySelector('.tx').textContent === w.tipHead, 'hover date ' + tip.querySelector('.tx').textContent);
+      if (w.clipped) ok(tip.querySelector('.tx').textContent === s.labels[first], 'hover shows the whole name');
+      ch.canvas.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      await frames();
+    }
+    // the table and back
+    const tb = card.querySelector('.ac-btn[aria-pressed]');
+    tb.click();
+    const rowsShown = card.querySelectorAll('.ac-table tbody tr').length;
+    ok(rowsShown === s.n && !card.querySelector('.ac-table').hidden && card.querySelector('.ac-plot').hidden, `table shows ${rowsShown} rows`);
+    tb.click();
+    ok(card.querySelector('.ac-table').hidden && !card.querySelector('.ac-plot').hidden, 'back to the chart');
+    // the CSV
+    const csv = Charts._csv(s), lines = csv.trimEnd().split('\r\n');
+    ok(lines.length === s.n + 1, `CSV has ${lines.length} lines`);
+    if (w.csvHead) ok(lines[0] === w.csvHead, 'CSV header ' + lines[0]);
+    // the image, for a few
+    if (w.png || ['top 10, long names', 'grouped bars', 'ten series', 'one patient, readings'].includes(c.name)) {
+      const blob = await Charts._png(s);
+      ok(blob && blob.size > 2000 && blob.type === 'image/png', 'image made' + (blob ? ` (${Math.round(blob.size / 1024)} KB)` : ''));
+      if (blob && c.name === 'top 10, long names') window.chartPng = URL.createObjectURL(blob);
+    }
+    finish(c, out);
+  }
+
+  // repaints: a card made again for the same block does not animate; replaced charts are let go
+  const again = Charts.card(CASES[0].spec);
+  document.body.appendChild(again);
+  const extra = [];
+  extra.push([again._chart && again._chart.options.animation === false, 'the same chart again: no animation']);
+  const count = () => Object.values(Chart.instances).length;
+  const before = count();
+  again.remove();
+  again._chart.$born = 0;
+  Charts.sweep();
+  extra.push([count() === before - 1, `a replaced chart is let go (${before} -> ${count()})`]);
+  const fresh = Charts.card({ type: 'bar', title: 'Fresh', data: [{ x: 'A', y: 1 }] });
+  Charts.sweep();
+  extra.push([!!fresh._chart && fresh._chart.canvas !== null, 'a chart about to be placed is kept']);
+  document.body.classList.add('view-mode');
+  const viewed = Charts.card({ type: 'bar', title: 'In the printable view', data: [{ x: 'A', y: 1 }, { x: 'B', y: 2 }] });
+  document.body.appendChild(viewed);
+  extra.push([viewed._chart.options.animation === false && viewed._chart.options.devicePixelRatio >= 2, 'printable view: still and sharp']);
+  document.body.classList.remove('view-mode');
+  let printErr = null;
+  try { window.dispatchEvent(new Event('beforeprint')); window.dispatchEvent(new Event('afterprint')); } catch (e) { printErr = e; }
+  extra.push([!printErr, 'print resize runs']);
+  viewed.remove();
+  const ex = el('div', 'case'); ex.appendChild(el('h3', null, 'repaints, print'));
+  const exRes = el('div', 'res'); ex.appendChild(exRes); grid.prepend(ex);
+  extra.forEach(([pass, msg]) => { const d = el('div', pass ? 'ok' : 'bad', (pass ? 'ok   ' : 'FAIL ') + msg); exRes.appendChild(d); results.push({ name: 'repaints', pass, msg }); });
+
+  const fails = results.filter(r => !r.pass);
+  const sum = document.getElementById('summary');
+  sum.textContent = fails.length ? `${fails.length} of ${results.length} checks failed` : `All ${results.length} checks passed on ${CASES.length} charts`;
+  sum.className = fails.length ? 'fail' : 'pass';
+  window.chartChecks = { total: results.length, failed: fails, cases: CASES.length };
+
+  function finish(c, out) {
+    out.forEach(([pass, msg]) => {
+      c.res.appendChild(el('div', pass ? 'ok' : 'bad', (pass ? 'ok   ' : 'FAIL ') + msg));
+      results.push({ name: c.name, pass, msg });
+    });
+  }
+})().catch(e => {
+  document.getElementById('summary').textContent = 'The check page failed: ' + e.message;
+  document.getElementById('summary').className = 'fail';
+  window.chartChecks = { total: 0, failed: [{ name: 'page', msg: e.message }] };
+});
+</script>
+</body>
+</html>

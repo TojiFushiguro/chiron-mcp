@@ -198,7 +198,8 @@
     .thread { max-width: none; padding: 12px 0; gap: 22px; }
     .topbar { height: auto; border: 0; padding: 0 0 8px; }
     .msg.user .bubble { background: #eee; color: #000; max-width: none; border-radius: 8px; }
-    .chart-box, .table-wrap, .turn { break-inside: avoid; }
+    .ac, .table-wrap, .turn { break-inside: avoid; }
+    .ac-tools, .ac-tip { display: none !important; }
     .banner { padding: 0 0 10px; }
     .banner > div { background: none; border: 0; padding: 0; }
   }
@@ -275,10 +276,49 @@
   .answer tbody tr:last-child td { border-bottom: 0; }
   .answer tbody tr:hover td { background: #fafbfb; }
 
-  .chart-box {
-    border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 14px; margin: 2px 0 12px; background: #fff; height: 310px;
+  /* a chart (see Charts): title, subtitle and buttons, a legend for several series, the chart or its table */
+  .ac { margin: 2px 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+  .ac [hidden] { display: none !important; }
+  .ac-head { display: flex; align-items: flex-start; gap: 10px; padding: 13px 12px 0 18px; }
+  .ac-titles { flex: 1; min-width: 0; }
+  .ac-title { font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.35; overflow-wrap: anywhere; }
+  .ac-sub { font-size: 12.5px; color: var(--muted); line-height: 1.4; margin-top: 1px; overflow-wrap: anywhere; }
+  .ac-tools { display: flex; gap: 2px; flex: none; }
+  .ac-btn {
+    display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border: 1px solid transparent;
+    border-radius: 8px; background: none; color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer;
   }
+  .ac-btn:hover { background: var(--panel); color: var(--ink); border-color: var(--line); }
+  .ac-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ac-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-line); }
+  .ac-btn.busy { opacity: .55; cursor: progress; }
+  .ac-narrow .ac-btn { padding: 0 7px; }
+  .ac-narrow .ac-btn span { display: none; }
+  .ac-legend { display: flex; flex-wrap: wrap; gap: 2px 16px; padding: 8px 18px 0; }
+  .ac-key {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2);
+    background: none; border: 0; padding: 2px 0; cursor: pointer; text-align: left;
+  }
+  .ac-key i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .ac-key.line i { width: 14px; height: 3px; }
+  .ac-key[aria-pressed="false"] { color: var(--faint); text-decoration: line-through; }
+  .ac-key[aria-pressed="false"] i { opacity: .3; }
+  .ac-plot { padding: 8px 14px 12px 8px; }
+  .ac-wrap { position: relative; }
+  .ac-tip {
+    position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; opacity: 0; transition: opacity .12s;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 7px 11px 8px; font-size: 12.5px; line-height: 1.5; min-width: 110px; max-width: 280px;
+  }
+  .ac-tip .tx { color: var(--muted); font-size: 12px; line-height: 1.35; margin-bottom: 3px; overflow-wrap: anywhere; }
+  .ac-tip .tr { display: flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 0; }
+  .ac-tip .tr i { width: 12px; height: 3px; border-radius: 2px; flex: none; }
+  .ac-tip .tr b { font-weight: 600; color: var(--ink); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .ac-tip .tr span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .ac-note { padding: 10px 18px 16px; font-size: 13.5px; color: var(--muted); }
+  .ac-table { padding: 8px 14px 14px; max-height: 380px; overflow: auto; }
+  .ac-table th { position: sticky; top: 0; z-index: 1; }
+  .ac-table .n { text-align: right; }
 
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .chiron-link {
@@ -1706,7 +1746,8 @@ function loadButton(body, cohort) {
 
 // --- rendering an answer --------------------------------------------------------------
 function render(target, markdown) {
-  // Pull out ```chart blocks before markdown parsing, and draw them with Chart.js.
+  Charts.sweep();
+  // Pull out ```chart blocks before markdown parsing, and draw them with Chart.js (see Charts).
   const charts = [];
   const text = markdown.replace(/```chart\s*([\s\S]*?)```/g, (_, body) => {
     try { charts.push(JSON.parse(body)); return `\n\n<div data-chart="${charts.length - 1}"></div>\n\n`; }
@@ -1736,13 +1777,8 @@ function render(target, markdown) {
   });
 
   target.querySelectorAll('[data-chart]').forEach(slot => {
-    const spec = charts[Number(slot.dataset.chart)];
-    if (!spec) { slot.remove(); return; }
-    const box = el('div', 'chart-box');
-    const canvas = document.createElement('canvas');
-    box.appendChild(canvas);
-    slot.replaceWith(box);
-    drawChart(canvas, spec);
+    const card = Charts.card(charts[Number(slot.dataset.chart)]);
+    if (card) slot.replaceWith(card); else slot.remove();
   });
 }
 
@@ -1752,84 +1788,673 @@ function dayOf(x) {
   const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/.exec(String(x));
   return m ? Date.UTC(+m[1], m[2] ? +m[2] - 1 : 0, m[3] ? +m[3] : 1) / 864e5 : NaN;
 }
-function dayLabel(d, withDay) {
-  const t = new Date(d * 864e5);
-  return withDay ? t.toISOString().slice(0, 10) : String(t.getUTCFullYear());
-}
-function drawChart(canvas, spec) {
-  // Two forms: one series as data:[{x,y}], or several as x:[...] with
-  // series:[{label, y:[...]}] (a two-variable breakdown, one series per row), which
-  // gets a legend so no bar is ever unlabelled. A line whose x values are dates (a
-  // patient's readings over time) is drawn on a time axis, one point per reading at the
-  // day it was taken, ticks at whole years, with the y axis fitted to the values.
-  const multi = Array.isArray(spec.series) && Array.isArray(spec.x);
-  const rows = spec.data || [];
-  const labels = multi ? spec.x : rows.map(r => r.x);
-  const dated = (spec.type === 'line' || spec.type === 'scatter') && labels.length > 1 && labels.every(x => ISO_DAY.test(String(x)));
-  const palette = ['#00796b', '#7b1fa2', '#f57c00', '#1976d2', '#c2185b', '#689f38', '#5d4037', '#455a64'];
-  const many = labels.length > 120;
-  const days = dated ? labels.map(dayOf) : [];
-  const point = (x, y, i) => dated ? { x: days[i], y, d: String(x) } : y;
-  const datasets = multi
-    ? spec.series.map((sr, k) => ({
-        label: sr.label || '', data: (sr.y || []).map((y, i) => point(labels[i], y, i)),
-        backgroundColor: palette[k % palette.length], borderColor: palette[k % palette.length],
-        borderWidth: spec.type === 'line' ? 2 : 0, borderRadius: 4, tension: dated ? 0.1 : 0.25,
-        pointRadius: dated ? (many ? 1.5 : 3) : 3, spanGaps: true,
-      }))
-    : [{
-        label: spec.label || '', data: rows.map((r, i) => point(r.x, r.y, i)),
-        backgroundColor: spec.type === 'doughnut' ? palette : '#00796b', borderColor: '#00796b',
-        borderWidth: spec.type === 'line' ? 2 : 0, borderRadius: 4, tension: dated ? 0.1 : 0.25,
-        pointRadius: dated ? (many ? 1.5 : 3) : 3, spanGaps: true,
-      }];
-  let xScale = { grid: { display: false } };
-  if (dated) {
-    const lo = Math.min(...days), hi = Math.max(...days);
-    const y0 = new Date(lo * 864e5).getUTCFullYear(), y1 = new Date(hi * 864e5).getUTCFullYear();
-    const span = Math.max(1, y1 - y0);
-    const ticks = [];
-    let monthly = false;
-    if (hi - lo <= 2 * 366) {
-      // readings within about two years: a tick at the first of each month, labelled by date
-      monthly = true;
-      const first = new Date(lo * 864e5);
-      for (let m = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1) / 864e5, y = first.getUTCFullYear(), k = first.getUTCMonth();
-           m <= hi + 31; k += 1, m = Date.UTC(y + Math.floor(k / 12), k % 12, 1) / 864e5) {
-        ticks.push({ value: m });
-        if (ticks.length > 30) break;
-      }
-    } else {
-      const step = span <= 10 ? 1 : span <= 20 ? 2 : span <= 50 ? 5 : span <= 100 ? 10 : 20;
-      for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) ticks.push({ value: Date.UTC(y, 0, 1) / 864e5 });
+
+// --- charts ----------------------------------------------------------------------------
+// A ```chart block (see the answering rules in webapp.py) is one series as data:[{x,y}], or
+// several as x:[...] with series:[{label, y:[...]}]; type bar, line or doughnut. Each one is
+// drawn as a card: the title and a subtitle (what is counted, which dataset) above the
+// chart, Image / CSV / Table buttons, and a hover box that gives the number first.
+// - Bars with long names lie sideways, each with its number at its end; a doughnut is
+//   drawn the same way, with each part's share. Upright bars carry their numbers when
+//   they fit, else a value axis does.
+// - Counts over time start at zero, with the latest value and the peak labelled;
+//   measurements (averages, one patient's readings) get an axis fitted to them.
+// - Colors come in a fixed order, checked for color blindness (neighbours, and the first
+//   three in any pairing); a series past the eighth is gray.
+// - A value that is not a number ("<11") is shown as written, without a bar.
+const Charts = (() => {
+  const PALETTE = ['#00897b', '#7b1fa2', '#ef6c00', '#d81b60', '#ff8f00', '#e53935', '#1e88e5', '#388e3c'];
+  const GRAYS = ['#98a2ab', '#6b7780', '#c4ccd2'];
+  const INK = '#1d2328', INK2 = '#3c464f', MUTED = '#6b7780', FAINT = '#98a2ab';
+  const GRID = '#eef1f3', BASE = '#cfd6db', LINE = '#e3e7ea', SURFACE = '#ffffff';
+  const FONT = (getComputedStyle(document.documentElement).getPropertyValue('--font') || '').trim()
+    || 'Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+  const NF0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+  const NF1 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+  const NF2 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+  const NFS = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 });
+  const NFC = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // Words in a chart's label (or title) that say whether a line counts things (zero-based)
+  // or measures them (an axis fitted to the values).
+  const MEASURES = /%|\b(average|avg|mean|median|rate|percent(age)?|share|age|bmi|scores?|mmhg|mg|kg|lbs?|levels?|pressure|ratio|index|weight|height|temperature|glucose|a1c|hba1c|cholesterol)\b/i;
+  const COUNTS = /\b(patients?|people|persons?|subjects?|diagnos\w*|visits?|encounters?|cases?|counts?|number|admissions?|prescriptions?|records?|events?|procedures?|conditions?|medications?|claims?|deaths?|births?)\b/i;
+  const DRAWN = new Set();     // charts already shown once: a repaint does not animate them again
+  let measurer = null;
+
+  const color = i => (i < PALETTE.length ? PALETTE[i] : GRAYS[(i - PALETTE.length) % GRAYS.length]);
+  const reducedMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function number(v) {
+    if (v == null || !isFinite(v)) return '';
+    if (Number.isInteger(v)) return NF0.format(v);
+    const a = Math.abs(v);
+    return a >= 100 ? NF1.format(v) : a >= 1 ? NF2.format(v) : NFS.format(v);
+  }
+  // A value as the model wrote it: a number, or text such as "1,234", "12.5%" or "<11".
+  function cell(raw) {
+    if (typeof raw === 'number') return isFinite(raw) ? { v: raw, t: number(raw) } : { v: null, t: '' };
+    if (typeof raw !== 'string') return { v: null, t: '' };
+    const s = raw.trim();
+    if (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s)) { const v = Number(s); return { v, t: number(v) }; }
+    const plain = s.replace(/[,\s  ]/g, '').replace(/^[$€£]/, '').replace(/%$/, '');
+    if (/^[-+]?(\d+\.?\d*|\.\d+)$/.test(plain)) return { v: Number(plain), t: s };
+    return { v: null, t: s };
+  }
+  function measure(text, font) {
+    measurer = measurer || document.createElement('canvas').getContext('2d');
+    measurer.font = font;
+    return measurer.measureText(text).width;
+  }
+  // Text cut to a width in pixels, with an ellipsis (the whole text is in the hover box and the table).
+  function fit(text, maxPx, font) {
+    text = String(text);
+    if (measure(text, font) <= maxPx) return text;
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (measure(text.slice(0, mid).trimEnd() + '…', font) <= maxPx) lo = mid; else hi = mid - 1;
     }
-    const pad = Math.max(1, (hi - lo) * 0.02);
-    xScale = {
-      type: 'linear', min: lo - pad, max: hi + pad, grid: { display: false },
-      afterBuildTicks: scale => { scale.ticks = ticks; },
-      ticks: { callback: v => monthly ? dayLabel(v, true).slice(0, 7) : dayLabel(v, false), maxRotation: 0, autoSkip: true },
+    return text.slice(0, lo).trimEnd() + '…';
+  }
+  const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`; };
+  const darker = (hex, t) => {
+    const n = parseInt(hex.slice(1), 16);
+    return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(c => Math.round(c * (1 - t)).toString(16).padStart(2, '0')).join('');
+  };
+  const lastIndex = vals => { for (let i = vals.length - 1; i >= 0; i--) if (vals[i] != null) return i; return -1; };
+  const most = (list, f) => list.reduce((m, x, i) => Math.max(m, f(x, i)), 0);
+  function fullDate(label) {
+    const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/.exec(label);
+    if (!m || !m[2]) return label;
+    const mon = MONTHS[+m[2] - 1] || m[2];
+    return m[3] ? `${mon} ${+m[3]}, ${m[1]}` : `${mon} ${m[1]}`;
+  }
+  function tickDate(d, style) {
+    const t = new Date(d * 864e5), mon = MONTHS[t.getUTCMonth()];
+    return style === 'day' ? `${mon} ${t.getUTCDate()}` : style === 'month' ? `${mon} ${t.getUTCFullYear()}` : String(t.getUTCFullYear());
+  }
+
+  // The chart block, read once, with the decisions the drawing makes.
+  function read(spec) {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null;
+    const listed = Array.isArray(spec.x) && Array.isArray(spec.series);
+    const rows = (Array.isArray(spec.data) ? spec.data : [])
+      .map(r => (Array.isArray(r) ? { x: r[0], y: r[1] } : r)).filter(r => r && typeof r === 'object');
+    let labels = (listed ? spec.x : rows.map(r => r.x)).map(x => (x == null || String(x).trim() === '' ? '(blank)' : String(x)));
+    const column = ys => { const cs = labels.map((_, i) => cell(ys[i])); return { values: cs.map(c => c.v), texts: cs.map(c => c.t) }; };
+    let series = listed
+      ? spec.series.filter(sr => sr && typeof sr === 'object').map((sr, k) => ({
+          label: sr.label == null || String(sr.label).trim() === '' ? `Series ${k + 1}` : String(sr.label),
+          ...column(Array.isArray(sr.y) ? sr.y : []) }))
+      : [{ label: spec.label == null ? '' : String(spec.label), ...column(rows.map(r => r.y)) }];
+    if (!series.length) series = [{ label: '', ...column([]) }];
+    const kind = String(spec.type || 'bar').toLowerCase();
+    const type = /line|scatter|area/.test(kind) ? 'line' : 'bar';
+    const n = labels.length;
+    const years = type === 'line' && n > 1 && labels.every(x => /^\d{4}$/.test(x));
+    const dates = type === 'line' && !years && n > 1 && labels.every(x => ISO_DAY.test(x) && isFinite(dayOf(x)));
+    if (years || dates) {
+      // a line through time runs in time order, whatever order the rows came in
+      const at = labels.map(x => (years ? Number(x) : dayOf(x)));
+      const order = labels.map((_, i) => i).sort((a, b) => at[a] - at[b]);
+      if (order.some((o, i) => o !== i)) {
+        labels = order.map(i => labels[i]);
+        series = series.map(sr => ({ ...sr, values: order.map(i => sr.values[i]), texts: order.map(i => sr.texts[i]) }));
+      }
+    }
+    const multi = series.length > 1;
+    const values = series.flatMap(sr => sr.values).filter(v => v != null);
+    const negative = values.some(v => v < 0);
+    const ints = values.every(v => Number.isInteger(v));
+    const total = series[0].values.reduce((a, v) => a + (v > 0 ? v : 0), 0);
+    const parts = /doughnut|donut|pie|polar/.test(kind) && !multi && !negative && total > 0;
+    const longest = most(labels, l => l.length);
+    const horizontal = type === 'bar' && n > 0 && n <= 40 && (parts || longest > 12 || (n > 10 && longest > 4));
+    const unit = spec.label == null ? '' : String(spec.label).trim();
+    const title = spec.title == null ? '' : String(spec.title).trim();
+    const said = unit || title;
+    const zero = type === 'bar' || (MEASURES.test(said) ? false : COUNTS.test(said) ? true : !dates && ints);
+    return {
+      title, unit, unitWord: /^[A-Z][a-z]+( [a-z]+)*$/.test(unit) ? unit.toLowerCase() : unit,
+      labels, series, n, type, years, dates, multi, negative, ints, total, parts, horizontal, zero,
+      empty: !values.length, texts: series.some(sr => sr.texts.some(Boolean)),
+      // sideways bars always carry their numbers; upright ones when the numbers fit
+      tips: type === 'bar' && !multi && !negative && horizontal,
+      caps: type === 'bar' && !multi && !negative && !horizontal && n <= 12,
     };
   }
-  new Chart(canvas, {
-    type: spec.type === 'scatter' ? 'line' : (spec.type || 'bar'),
-    data: dated ? { datasets } : { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      // A printable copy must not be caught mid-animation.
-      animation: document.body.classList.contains('view-mode') ? false : undefined,
-      plugins: {
-        legend: { display: multi || spec.type === 'doughnut', labels: { boxWidth: 12, boxHeight: 12 } },
-        title: { display: !!spec.title, text: spec.title || '', font: { size: 14, weight: '600' }, color: '#1d2328' },
-        tooltip: dated ? { callbacks: { title: items => items.length && items[0].raw ? String(items[0].raw.d) : '' } } : {},
-      },
-      scales: spec.type === 'doughnut' ? {} : {
-        x: xScale,
-        y: { beginAtZero: !dated, grid: { color: '#eef1f3' },
-             title: { display: !!spec.label && !multi, text: spec.label || '' } },
-      },
-    },
-  });
-}
+  function share(s, i) {
+    const v = s.series[0].values[i];
+    if (!s.parts || v == null) return '';
+    const p = v / s.total * 100;
+    return p === 0 ? '0%' : p < 0.1 ? '<0.1%' : p < 10 ? p.toFixed(1) + '%' : Math.round(p) + '%';
+  }
+  const endText = (s, k) => { const sr = s.series[k], j = lastIndex(sr.values); return j < 0 ? '' : (s.multi ? `${sr.label} ${sr.texts[j]}` : sr.texts[j]); };
+  const rowHeight = s => (s.multi ? s.series.length * 16 + 14 : s.n <= 15 ? 32 : s.n <= 30 ? 26 : 22);
+  const height = s => (s.horizontal ? Math.max(110, s.n * rowHeight(s) + 12) : 270);
+  function subtitle(s) {
+    const what = s.parts ? `Share of ${number(s.total)}${s.unitWord ? ' ' + s.unitWord : ''}` : s.unit;
+    return [what, DATASET ? DATASET_NAME : ''].filter(Boolean).join(' · ');
+  }
+  // Grouped bars: each bar at most 24 px wide, the bars of a group 2 px apart.
+  function fitGroups(datasets, s, width, k) {
+    const span = Math.max(120, (width || 640) - 56 * k);
+    const cp = Math.max(0.3, Math.min(0.8, (s.series.length * 26 * k) / (span / Math.max(1, s.n))));
+    datasets.forEach(d => { d.categoryPercentage = cp; d.barPercentage = 24 / 26; });
+    return cp;
+  }
+  function capsFit(s, width, k) {
+    const font = `500 ${12 * k}px ${FONT}`;
+    return most(s.series[0].texts, t => measure(t, font)) + 6 * k <= ((width || 640) - 16 * k) / Math.max(1, s.n) * 0.9;
+  }
+
+  function config(s, o) {
+    const k = o.k || 1;
+    const F = (size, weight = 400) => ({ family: FONT, size: +(size * k).toFixed(2), weight });
+    const width = o.width || 640;
+    const xs = s.years ? s.labels.map(Number) : s.dates ? s.labels.map(dayOf) : null;
+    const many = s.n > 60;
+    const st = { labels: s.tips || (s.caps && capsFit(s, width, k)), card: o.card };
+    const values = s.series.flatMap(sr => sr.values).filter(v => v != null);
+    const top = most(values, v => Math.abs(v));
+    const thick = s.horizontal ? (s.multi ? 14 : s.n <= 15 ? 18 : s.n <= 30 ? 16 : 14) : 24;
+
+    const datasets = s.series.map((sr, i) => {
+      const c = color(i), last = lastIndex(sr.values);
+      const data = xs ? sr.values.map((y, j) => ({ x: xs[j], y })) : sr.values.slice();
+      if (s.type === 'line') {
+        const area = !s.multi && s.zero && !s.negative;     // a wash only where the axis starts at zero
+        const dots = s.dates && !many;
+        return {
+          label: sr.label, data, borderColor: c, borderWidth: 2 * k, borderCapStyle: 'round', borderJoinStyle: 'round',
+          tension: 0, cubicInterpolationMode: s.dates ? 'default' : 'monotone', spanGaps: true,
+          fill: area ? 'origin' : false, backgroundColor: area ? rgba(c, 0.1) : c,
+          pointRadius: ctx => (ctx.dataIndex === last ? 5 * k : dots ? 4.5 * k : 0),
+          pointBackgroundColor: c, pointBorderColor: SURFACE, pointBorderWidth: 2 * k,
+          pointHoverRadius: 5.5 * k, pointHoverBorderWidth: 2 * k, pointHoverBackgroundColor: c, pointHoverBorderColor: SURFACE,
+          pointHitRadius: 10 * k, clip: 14 * k,
+        };
+      }
+      return {
+        label: sr.label, data, backgroundColor: c, hoverBackgroundColor: darker(c, 0.14), borderWidth: 0,
+        borderRadius: 4 * k, borderSkipped: 'start', maxBarThickness: thick * k,
+        categoryPercentage: 0.8, barPercentage: s.multi ? 24 / 26 : 0.9,
+      };
+    });
+    if (s.type === 'bar' && s.multi && !s.horizontal) fitGroups(datasets, s, width, k);
+
+    // room beside the bars and after the lines for their numbers
+    let padT = 6 * k, padR = 8 * k;
+    if (s.tips) {
+      const vf = `500 ${12.5 * k}px ${FONT}`, sf = `400 ${12.5 * k}px ${FONT}`;
+      padR = most(s.series[0].texts, (t, i) => measure(t, vf) + (s.parts && t ? measure(' · ' + share(s, i), sf) : 0)) + 14 * k;
+    }
+    if (s.caps) padT = 22 * k;
+    if (s.type === 'line') {
+      padR = most(s.series, (_, i) => measure(endText(s, i), `600 ${12.5 * k}px ${FONT}`)) + 18 * k;
+      padT = 22 * k;
+    }
+    padR = Math.min(padR, width * 0.4);
+
+    const valueAxis = {
+      display: !st.labels, beginAtZero: s.zero, grace: st.labels ? 0 : s.zero ? '6%' : '12%',
+      border: { display: false },
+      grid: { color: c => (s.negative && c.tick && c.tick.value === 0 ? BASE : GRID), lineWidth: 1, drawTicks: false },
+      ticks: { color: MUTED, font: F(12), padding: 8 * k, maxTicksLimit: 5, precision: s.ints ? 0 : undefined,
+               callback: v => (top >= 10000 ? NFC.format(v) : number(v)) },
+    };
+    const nameFont = `400 ${12.5 * k}px ${FONT}`, tickFont = `400 ${12 * k}px ${FONT}`;
+    // Chart.js gives the name column at most half of what the padding leaves
+    const nameMax = w => Math.max(40 * k, Math.min(300 * k, (w - 4 * k - padR) / 2 - 14 * k));
+    const catAxis = s.horizontal
+      ? { grid: { display: false, drawTicks: false }, border: { display: true, color: BASE },
+          ticks: { color: INK2, font: F(12.5), padding: 8 * k, autoSkip: false,
+                   callback(v) { return fit(s.labels[v] ?? '', nameMax(this.chart.width), nameFont); } } }
+      : { grid: { display: false, drawTicks: false }, border: { display: true, color: BASE }, offset: s.type === 'bar' || s.n === 1,
+          ticks: { color: MUTED, font: F(12), padding: 6 * k, maxRotation: 0, autoSkipPadding: 12 * k,
+                   callback(v) { return fit(s.labels[v] ?? '', Math.max(36 * k, this.chart.width / Math.max(1, Math.min(s.n, 12)) - 12 * k), tickFont); } } };
+    let timeAxis = null;
+    if (xs) {
+      let lo = xs.reduce((m, x) => Math.min(m, x), Infinity), hi = xs.reduce((m, x) => Math.max(m, x), -Infinity);
+      let ticks = [], style = 'year', pad = 0;
+      if (s.years) {
+        if (lo === hi) { lo -= 1; hi += 1; }
+        const span = hi - lo, step = span <= 12 ? 1 : span <= 24 ? 2 : span <= 60 ? 5 : span <= 120 ? 10 : 20;
+        for (let y = Math.ceil(lo / step) * step; y <= hi; y += step) ticks.push(y);
+      } else {
+        pad = Math.max(2, (hi - lo) * 0.02);
+        if (hi - lo <= 62) {
+          style = 'day';
+          const step = Math.max(1, Math.ceil((hi - lo) / 6));
+          for (let d = Math.ceil(lo); d <= hi; d += step) ticks.push(d);
+        } else if (hi - lo <= 2 * 366) {
+          style = 'month';
+          const t0 = new Date(lo * 864e5), months = [];
+          for (let m = t0.getUTCFullYear() * 12 + t0.getUTCMonth(); months.length < 40; m++) {
+            const d = Date.UTC(Math.floor(m / 12), m % 12, 1) / 864e5;
+            if (d > hi) break;
+            if (d >= lo - pad) months.push(d);
+          }
+          const every = Math.max(1, Math.ceil(months.length / 7));
+          ticks = months.filter((_, i) => i % every === 0);
+        } else {
+          const y0 = new Date(lo * 864e5).getUTCFullYear(), y1 = new Date(hi * 864e5).getUTCFullYear();
+          const span = Math.max(1, y1 - y0), step = span <= 8 ? 1 : span <= 16 ? 2 : span <= 40 ? 5 : span <= 100 ? 10 : 20;
+          for (let y = Math.ceil(y0 / step) * step; y <= y1 + 1; y += step) {
+            const d = Date.UTC(y, 0, 1) / 864e5;
+            if (d >= lo - pad && d <= hi + pad) ticks.push(d);
+          }
+        }
+      }
+      timeAxis = {
+        type: 'linear', min: lo - pad, max: hi + pad, grid: { display: false, drawTicks: false }, border: { display: true, color: BASE },
+        afterBuildTicks: sc => { sc.ticks = ticks.map(value => ({ value })); },
+        ticks: { color: MUTED, font: F(12), padding: 6 * k, maxRotation: 0, autoSkip: true, autoSkipPadding: 14 * k,
+                 callback: v => (s.years ? String(v) : tickDate(v, style)) },
+      };
+    }
+
+    const options = {
+      responsive: !o.exporting, maintainAspectRatio: false,
+      animation: o.still || o.exporting ? false : { duration: 500, easing: 'easeOutCubic' },
+      indexAxis: s.horizontal ? 'y' : 'x',
+      layout: { padding: { top: padT, right: padR, bottom: 2 * k, left: 2 * k } },
+      interaction: { mode: 'index', intersect: false, axis: s.horizontal ? 'y' : 'x' },
+      plugins: { legend: { display: false }, title: { display: false }, tooltip: { enabled: false, external: o.tip || (() => {}) } },
+      scales: s.horizontal ? { x: valueAxis, y: catAxis } : { x: timeAxis || catAxis, y: valueAxis },
+      // after the first layout and every resize: group widths, numbers on upright bars, compact buttons
+      onResize: (chart, size) => requestAnimationFrame(() => relayout(chart, s, st, size.width, k)),
+    };
+    if (o.exporting) { options.devicePixelRatio = 2; options.events = []; }
+    else if (document.body.classList.contains('view-mode')) options.devicePixelRatio = Math.max(2, window.devicePixelRatio || 1);
+    return {
+      type: s.type,
+      data: xs ? { datasets } : { labels: s.labels, datasets },
+      options,
+      plugins: [crossPlugin(s), labelsPlugin(s, st, k), endPlugin(s, k)],
+    };
+  }
+  function relayout(chart, s, st, width, k) {
+    if (!chart.canvas || !chart.canvas.isConnected) return;
+    if (st.card) st.card.classList.toggle('ac-narrow', width < 440);
+    let changed = false;
+    if (s.type === 'bar' && s.multi && !s.horizontal) {
+      const before = chart.data.datasets[0].categoryPercentage;
+      if (Math.abs(fitGroups(chart.data.datasets, s, width, k) - before) > 0.005) changed = true;
+    }
+    if (s.caps) {
+      const fits = capsFit(s, width, k);
+      if (fits !== st.labels) {
+        st.labels = fits;
+        chart.options.scales.y.display = !fits;
+        chart.options.scales.y.grace = fits ? 0 : '6%';
+        changed = true;
+      }
+    }
+    if (changed) chart.update('none');
+  }
+
+  // A thin guide line under the pointer on a line chart.
+  function crossPlugin(s) {
+    return { id: 'askCross', beforeDatasetsDraw(chart) {
+      if (s.type !== 'line') return;
+      const act = chart.getActiveElements();
+      if (!act.length || !isFinite(act[0].element.x)) return;
+      const x = Math.round(act[0].element.x) + 0.5, a = chart.chartArea, g = chart.ctx;
+      g.save(); g.strokeStyle = BASE; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, a.top); g.lineTo(x, a.bottom); g.stroke(); g.restore();
+    } };
+  }
+  // Each bar's number at its end (sideways) or above it (upright), with the share of a
+  // part; a value too small to see still gets a sliver, and zero gets none.
+  function labelsPlugin(s, st, k) {
+    return { id: 'askLabels', afterDatasetsDraw(chart) {
+      if (!st.labels) return;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta || meta.hidden || !chart.isDatasetVisible(0)) return;
+      const vs = s.horizontal ? chart.scales.x : chart.scales.y, cs = s.horizontal ? chart.scales.y : chart.scales.x;
+      const base = vs.getPixelForValue(0), g = chart.ctx;
+      const vf = `500 ${12.5 * k}px ${FONT}`, sf = `400 ${12.5 * k}px ${FONT}`, cf = `500 ${12 * k}px ${FONT}`;
+      g.save();
+      s.series[0].texts.forEach((t, i) => {
+        if (!t) return;
+        const v = s.series[0].values[i], bar = meta.data[i];
+        const at = cs.getPixelForValue(i);
+        let end = base, thick = 14 * k;
+        if (bar) {
+          const p = bar.getProps(['x', 'y', 'width', 'height'], false);
+          const e = s.horizontal ? p.x : p.y;
+          if (v != null && isFinite(e)) end = e;
+          const th = s.horizontal ? p.height : p.width;
+          if (isFinite(th) && th > 0) thick = th;
+        }
+        if (s.horizontal) {
+          if (v != null && v !== 0 && Math.abs(end - base) < 2 * k) { g.fillStyle = color(0); g.fillRect(base, at - thick / 2, 2 * k, thick); end = base + 2 * k; }
+          const x = Math.max(end, base) + 7 * k;
+          g.textBaseline = 'middle'; g.textAlign = 'left'; g.font = vf; g.fillStyle = INK2;
+          const shown = fit(t, Math.max(16 * k, chart.width - x - 4 * k), vf);
+          g.fillText(shown, x, at);
+          const sh = shown === t ? share(s, i) : '';
+          if (sh) {
+            const w = measure(shown, vf);
+            if (x + w + measure(' · ' + sh, sf) <= chart.width - 2 * k) { g.font = sf; g.fillStyle = MUTED; g.fillText(' · ' + sh, x + w, at); }
+          }
+        } else {
+          if (v != null && v !== 0 && Math.abs(base - end) < 2 * k) { g.fillStyle = color(0); g.fillRect(at - thick / 2, base - 2 * k, thick, 2 * k); end = base - 2 * k; }
+          g.textBaseline = 'bottom'; g.textAlign = 'center'; g.font = cf; g.fillStyle = INK2;
+          g.fillText(t, at, Math.min(end, base) - 5 * k);
+        }
+      });
+      g.restore();
+    } };
+  }
+  // The latest value at the end of each line (none when two ends crowd each other: the
+  // legend names them), and the peak of a single series.
+  function endPlugin(s, k) {
+    return { id: 'askEnd', afterDatasetsDraw(chart) {
+      if (s.type !== 'line') return;
+      const g = chart.ctx, ef = `600 ${12.5 * k}px ${FONT}`;
+      const ends = [];
+      s.series.forEach((sr, di) => {
+        if (!chart.isDatasetVisible(di)) return;
+        const j = lastIndex(sr.values), p = j >= 0 && chart.getDatasetMeta(di).data[j];
+        if (p && isFinite(p.x) && isFinite(p.y)) ends.push({ p, text: endText(s, di) });
+      });
+      g.save();
+      const crowded = ends.some((e, i) => ends.some((f, j) => j > i && Math.abs(e.p.y - f.p.y) < 15 * k));
+      if (!crowded) {
+        g.textBaseline = 'middle'; g.textAlign = 'left'; g.font = ef; g.fillStyle = INK;
+        ends.forEach(e => g.fillText(fit(e.text, Math.max(16 * k, chart.width - e.p.x - 13 * k), ef), e.p.x + 9 * k, e.p.y));
+      }
+      if (!s.multi && !s.dates && chart.isDatasetVisible(0)) {
+        const vals = s.series[0].values, data = chart.getDatasetMeta(0).data, j = lastIndex(vals);
+        let m = -1;
+        vals.forEach((v, i) => { if (v != null && (m < 0 || v > vals[m])) m = i; });
+        const p = m >= 0 && data[m], q = j >= 0 && data[j];
+        if (p && q && m !== j && isFinite(p.x) && isFinite(p.y) && q.x - p.x > 40 * k) {
+          g.beginPath(); g.arc(p.x, p.y, 3.5 * k, 0, Math.PI * 2);
+          g.fillStyle = color(0); g.fill(); g.lineWidth = 2 * k; g.strokeStyle = SURFACE; g.stroke();
+          g.textAlign = 'center'; g.textBaseline = 'bottom'; g.font = `500 ${12 * k}px ${FONT}`; g.fillStyle = INK2;
+          g.fillText(s.series[0].texts[m], p.x, p.y - 8 * k);
+        }
+      }
+      g.restore();
+    } };
+  }
+
+  // The hover box: the category, then each series with its number first, beside the
+  // pointer. Names come from the data, so only as text.
+  function tipHandler(box, s, ptr) {
+    const tip = box.querySelector('.ac-tip');
+    return ({ chart, tooltip }) => {
+      const pts = tooltip && tooltip.opacity !== 0 ? (tooltip.dataPoints || []) : [];
+      if (!pts.length || !chart.canvas) { tip.style.opacity = 0; return; }
+      const i = pts[0].dataIndex;
+      tip.replaceChildren(el('div', 'tx', s.dates ? fullDate(s.labels[i]) : (s.labels[i] ?? '')));
+      pts.forEach(dp => {
+        const sr = s.series[dp.datasetIndex];
+        if (!sr) return;
+        const row = el('div', 'tr'), key = el('i');
+        key.style.background = color(dp.datasetIndex);
+        const extra = s.multi ? sr.label : s.parts ? [s.unitWord, share(s, dp.dataIndex)].filter(Boolean).join(' · ') : s.unitWord;
+        row.append(key, el('b', null, sr.texts[dp.dataIndex] || ''), el('span', null, extra));
+        tip.appendChild(row);
+      });
+      const wrap = chart.canvas.parentNode, W = wrap.clientWidth, H = wrap.clientHeight;
+      tip.style.opacity = 1;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      const px = ptr.x != null ? ptr.x : tooltip.caretX, py = ptr.x != null ? ptr.y : tooltip.caretY;
+      let x = px + 14, y = py + 14;
+      if (x + tw > W - 4) x = px - tw - 14;
+      if (y + th > H - 4) y = py - th - 14;
+      tip.style.left = Math.max(4, x) + 'px';
+      tip.style.top = Math.max(4, y) + 'px';
+    };
+  }
+  function describe(s) {
+    const head = `${s.type === 'line' ? 'Line chart' : s.horizontal ? 'Bar chart' : 'Column chart'}${s.title ? ': ' + s.title : ''}.`;
+    if (s.multi) return `${head} ${s.series.map(x => x.label).join(', ')} across ${s.n} groups. The Table button lists every number.`;
+    const v = s.series[0].values;
+    let m = -1;
+    v.forEach((x, i) => { if (x != null && (m < 0 || x > v[m])) m = i; });
+    return `${head} ${s.n} values${m >= 0 ? `, highest ${s.labels[m]} at ${s.series[0].texts[m]}` : ''}. The Table button lists every number.`;
+  }
+
+  // The numbers as rows: shown in the table as written, saved in the CSV as plain numbers.
+  function rows(s, raw) {
+    const head = [s.years ? 'Year' : s.dates ? 'Date' : 'Category', ...(s.multi ? s.series.map(x => x.label) : [s.unit || 'Value'])];
+    if (s.parts) head.push(raw ? 'Share (%)' : 'Share');
+    const body = s.labels.map((lab, i) => {
+      const r = [lab, ...s.series.map(sr => (raw && sr.values[i] != null ? sr.values[i] : sr.texts[i]))];
+      if (s.parts) {
+        const v = s.series[0].values[i];
+        r.push(raw ? (v != null ? +(v / s.total * 100).toFixed(1) : '') : share(s, i));
+      }
+      return r;
+    });
+    return [head, ...body];
+  }
+  function tableOf(s) {
+    const [head, ...body] = rows(s, false);
+    const t = el('table'), thead = el('thead'), tr = el('tr'), tb = el('tbody');
+    head.forEach((h, j) => { const th = el('th', j ? 'n' : null, h); th.scope = 'col'; tr.appendChild(th); });
+    thead.appendChild(tr);
+    body.forEach(r => { const row = el('tr'); r.forEach((c, j) => row.appendChild(el('td', j ? 'n' : null, String(c)))); tb.appendChild(row); });
+    t.append(thead, tb);
+    return t;
+  }
+  function csvOf(s) {
+    const q = v => {
+      let t = v == null ? '' : String(v);
+      if (typeof v === 'string' && /^[=+\-@\t\r]/.test(t)) t = "'" + t;   // never a formula in a spreadsheet
+      return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    return rows(s, true).map(r => r.map(q).join(',')).join('\r\n') + '\r\n';
+  }
+  const fileName = (s, ext) => 'ask-' + ((s.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'chart') + '.' + ext;
+  function save(blob, name) {
+    if (!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // The image: the chart drawn again at twice the size of a wide screen, with its title,
+  // subtitle and legend, and a footer naming the dataset and the day.
+  function roundRect(g, x, y, w, h, r) { if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
+  function wrapLines(text, font, maxW, max) {
+    const lines = [];
+    let cur = '';
+    for (const w of String(text).split(/\s+/).filter(Boolean)) {
+      const t = cur ? cur + ' ' + w : w;
+      if (cur && measure(t, font) > maxW) { lines.push(cur); cur = w; } else cur = t;
+    }
+    if (cur) lines.push(cur);
+    if (lines.length > max) { lines.length = max; lines[max - 1] += '…'; }
+    return lines.map(l => fit(l, maxW, font));
+  }
+  async function png(s) {
+    const W = 1000, PAD = 44, R = 2, k = 1.28;
+    const innerW = W - PAD * 2, plotH = Math.round(height(s) * k);
+    const holder = el('div');
+    holder.style.cssText = `position:fixed;left:-30000px;top:0;width:${innerW}px;height:${plotH}px;pointer-events:none;`;
+    const cv = document.createElement('canvas');
+    cv.width = innerW; cv.height = plotH; cv.style.width = innerW + 'px'; cv.style.height = plotH + 'px';
+    holder.appendChild(cv); document.body.appendChild(holder);
+    let chart = null;
+    try {
+      chart = new Chart(cv, config(s, { k, width: innerW, exporting: true }));
+      const out = document.createElement('canvas'), g = out.getContext('2d');
+      const T = `600 26px ${FONT}`, S = `400 16px ${FONT}`, L = `400 15px ${FONT}`, Fo = `400 13.5px ${FONT}`;
+      const lines = wrapLines(s.title, T, innerW, 3);
+      const sub = fit(subtitle(s), innerW, S);
+      const keys = [];
+      let kx = 0, ky = 0;
+      if (s.multi) {
+        s.series.forEach((sr, i) => {
+          const name = fit(sr.label, innerW - 40, L), w = (s.type === 'line' ? 26 : 21) + measure(name, L) + 22;
+          if (kx && kx + w > innerW) { kx = 0; ky += 26; }
+          keys.push({ i, name, x: kx, y: ky });
+          kx += w;
+        });
+      }
+      const legendH = s.multi ? ky + 36 : 0;
+      const H = PAD + lines.length * 34 + (sub ? 30 : 0) + 14 + legendH + plotH + 26 + 1 + 16 + 18 + PAD - 8;
+      out.width = W * R; out.height = Math.round(H * R);
+      g.scale(R, R);
+      g.fillStyle = SURFACE; g.fillRect(0, 0, W, H);
+      g.textBaseline = 'top'; g.textAlign = 'left';
+      let y = PAD;
+      g.font = T; g.fillStyle = INK;
+      lines.forEach(t => { g.fillText(t, PAD, y); y += 34; });
+      if (sub) { g.font = S; g.fillStyle = MUTED; g.fillText(sub, PAD, y + 2); y += 30; }
+      y += 14;
+      keys.forEach(kk => {
+        const x = PAD + kk.x, yy = y + kk.y;
+        g.fillStyle = color(kk.i); g.beginPath();
+        if (s.type === 'line') roundRect(g, x, yy + 7, 18, 3, 1.5); else roundRect(g, x, yy + 2, 13, 13, 3);
+        g.fill();
+        g.font = L; g.fillStyle = INK2; g.fillText(kk.name, x + (s.type === 'line' ? 26 : 21), yy);
+      });
+      y += legendH;
+      g.drawImage(cv, PAD, y, innerW, plotH);
+      y += plotH + 26;
+      g.fillStyle = LINE; g.fillRect(PAD, y, innerW, 1);
+      y += 16;
+      const when = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      g.font = Fo; g.fillStyle = FAINT;
+      g.fillText(fit([DATASET ? DATASET_NAME : '', when, 'Made with Ask in Chiron'].filter(Boolean).join('   ·   '), innerW, Fo), PAD, y);
+      return await new Promise(res => out.toBlob(res, 'image/png'));
+    } finally {
+      if (chart) chart.destroy();
+      holder.remove();
+    }
+  }
+
+  const ICONS = {
+    image: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m20 16-4.5-4.5L8 19"/></svg>',
+    csv: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 19h14"/></svg>',
+    table: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M3 14.5h18M9.5 4v16"/></svg>',
+    chart: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-9M12 20V5M19 20v-6"/></svg>',
+  };
+  function setTool(b, icon, label, title) {
+    b.innerHTML = ICONS[icon];
+    b.appendChild(el('span', null, label));
+    b.title = title; b.setAttribute('aria-label', title);
+  }
+  function tool(icon, label, title) {
+    const b = el('button', 'ac-btn');
+    b.type = 'button';
+    setTool(b, icon, label, title);
+    return b;
+  }
+
+  // One chart: a card for the answer, or null when the block is not a chart at all.
+  function card(spec) {
+    const s = read(spec);
+    if (!s) return null;
+    const box = el('figure', 'ac');
+    const head = el('figcaption', 'ac-head'), titles = el('div', 'ac-titles');
+    if (s.title) titles.appendChild(el('div', 'ac-title', s.title));
+    const sub = subtitle(s);
+    if (sub) titles.appendChild(el('div', 'ac-sub', sub));
+    head.appendChild(titles);
+    box.appendChild(head);
+    const tools = el('div', 'ac-tools');
+    const bImg = tool('image', 'Image', 'Download this chart as an image (PNG)');
+    const bCsv = tool('csv', 'CSV', 'Download the numbers behind this chart (CSV)');
+    const bTab = tool('table', 'Table', 'Show the numbers as a table');
+    bTab.setAttribute('aria-pressed', 'false');
+    tools.append(bImg, bCsv, bTab);
+    head.appendChild(tools);
+    const table = el('div', 'ac-table');
+    table.hidden = true;
+    const showTable = on => {
+      bTab.setAttribute('aria-pressed', String(on));
+      if (on && !table.firstChild) table.appendChild(tableOf(s));
+      table.hidden = !on;
+      box.querySelectorAll('.ac-legend, .ac-plot').forEach(n => { n.hidden = on; });
+      if (on) setTool(bTab, 'chart', 'Chart', 'Show the chart again'); else setTool(bTab, 'table', 'Table', 'Show the numbers as a table');
+    };
+    bTab.onclick = () => showTable(bTab.getAttribute('aria-pressed') !== 'true');
+    bCsv.onclick = () => save(new Blob(['﻿' + csvOf(s)], { type: 'text/csv;charset=utf-8' }), fileName(s, 'csv'));
+    if (s.empty) {
+      // nothing to draw: say so, and keep the table when there is text such as "<11"
+      bImg.hidden = true;
+      if (!s.texts) tools.hidden = true;
+      box.append(el('div', 'ac-note', 'No numbers to chart.'), table);
+      return box;
+    }
+    let legend = null;
+    if (s.multi) {
+      legend = el('div', 'ac-legend');
+      s.series.forEach((sr, i) => {
+        const key = el('button', 'ac-key' + (s.type === 'line' ? ' line' : ''));
+        key.type = 'button'; key.title = 'Hide or show ' + sr.label;
+        key.setAttribute('aria-pressed', 'true');
+        const sw = el('i');
+        sw.style.background = color(i);
+        key.append(sw, el('span', null, sr.label));
+        key.onclick = () => {
+          const ch = box._chart;
+          if (!ch) return;
+          const on = !ch.isDatasetVisible(i);
+          ch.setDatasetVisibility(i, on);
+          key.setAttribute('aria-pressed', String(on));
+          ch.update();
+        };
+        legend.appendChild(key);
+      });
+      box.appendChild(legend);
+    }
+    const plot = el('div', 'ac-plot'), wrap = el('div', 'ac-wrap');
+    wrap.style.height = height(s) + 'px';
+    const canvas = el('canvas', 'ac-canvas');
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', describe(s));
+    const tip = el('div', 'ac-tip');
+    tip.setAttribute('aria-hidden', 'true');
+    wrap.append(canvas, tip);
+    plot.appendChild(wrap);
+    box.append(plot, table);
+    const ptr = { x: null, y: null };
+    canvas.addEventListener('pointermove', e => { const r = canvas.getBoundingClientRect(); ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top; });
+    canvas.addEventListener('pointerleave', () => { ptr.x = null; tip.style.opacity = 0; });
+    const key = JSON.stringify(spec);
+    const still = DRAWN.has(key) || document.body.classList.contains('view-mode') || reducedMotion();
+    DRAWN.add(key);
+    // the answer is usually still off the page here; Chart.js draws once it is placed
+    const thread = document.querySelector('.thread');
+    const width = wrap.clientWidth || (thread && thread.clientWidth ? Math.min(752, thread.clientWidth - 48) - 24 : 700);
+    try {
+      box._chart = new Chart(canvas, config(s, { k: 1, width, tip: tipHandler(box, s, ptr), still, card: box }));
+      box._chart.$born = Date.now();
+    } catch (_) {
+      plot.replaceChildren(el('div', 'ac-note', 'This chart could not be drawn. The Table button shows its numbers.'));
+      bImg.hidden = true;
+    }
+    bImg.onclick = async () => {
+      if (bImg.classList.contains('busy') || !box._chart) return;
+      bImg.classList.add('busy');
+      try { save(await png(s), fileName(s, 'png')); } catch (_) { /* nothing to save */ } finally { bImg.classList.remove('busy'); }
+    };
+    return box;
+  }
+
+  const ours = () => (typeof Chart === 'undefined' ? [] : Object.values(Chart.instances || {}).filter(ch => ch.canvas && ch.canvas.classList.contains('ac-canvas')));
+  // Charts of answers no longer on the page (a repaint replaced them) are let go; one just
+  // made for an answer about to be placed is kept.
+  function sweep() {
+    ours().forEach(ch => { if (!ch.canvas.isConnected && Date.now() - (ch.$born || 0) > 2000) ch.destroy(); });
+  }
+  // Printing (Export PDF) lays the page out again: charts fit the printed width.
+  const resizeAll = () => ours().forEach(ch => { if (ch.canvas.isConnected) ch.resize(); });
+  window.addEventListener('beforeprint', resizeAll);
+  window.addEventListener('afterprint', resizeAll);
+
+  return { card, sweep, _read: read, _csv: csvOf, _png: png };
+})();
 
 // --- traces --------------------------------------------------------------------------
 // Every answer keeps a trace: how it was produced, step by step, against the clock, with
