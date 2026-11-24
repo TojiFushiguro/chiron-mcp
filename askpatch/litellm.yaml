@@ -1,0 +1,36 @@
+# The models Ask can use through LiteLLM (compose.litellm.yml). Each model_name is the id
+# to list in CHIRON_MCP_ASK_MODELS in .env (id=Label, separated by commas). Keep the ones
+# you use and delete the rest. Model ids change over time: check your provider's list.
+model_list:
+  # OpenAI (OPENAI_API_KEY in .env)
+  - model_name: gpt-6.2-sol
+    litellm_params:
+      model: openai/gpt-6.2-sol
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Google Gemini (GEMINI_API_KEY in .env)
+  - model_name: gemini-3.8-flash
+    litellm_params:
+      model: gemini/gemini-3.8-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  # Claude beside them, in the same menu (ANTHROPIC_API_KEY in .env)
+  # - model_name: claude-haiku-5-5
+  #   litellm_params:
+  #     model: anthropic/claude-haiku-5-5
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+
+  # A model server on your own computer or network that speaks OpenAI's API (vLLM,
+  # LM Studio, Ollama's /v1); host.docker.internal is this machine
+  # - model_name: my-model
+  #   litellm_params:
+  #     model: openai/<the model's name on that server>
+  #     api_base: http://host.docker.internal:8000/v1
+  #     api_key: unused
+
+litellm_settings:
+  # leave out request options a provider does not support, rather than fail the call
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

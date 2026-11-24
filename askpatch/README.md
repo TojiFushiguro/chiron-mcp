@@ -63,8 +63,9 @@ of the upstream pull request).
    VITE_ASK_URL=/ask npm run build      # deploy the build as you normally do
    ```
 
-5. Connect a model and check. In `.env`: `ANTHROPIC_API_KEY`, or the Bedrock lines, or a
-   model server of your own (see "The model" below), then `docker compose up -d`:
+5. Connect a model and check. In `.env`: Claude (`ANTHROPIC_API_KEY` or the Bedrock
+   lines), OpenAI or Gemini (through LiteLLM), or a model of your own (see "The model"
+   below; with PHI, only a model approved for PHI), then `docker compose up -d`:
 
    ```bash
    python3 check.py                     # every line PASS
@@ -94,13 +95,20 @@ The rest of this page explains each step.
   container there.
 - A **web server in front of Chiron** that can take one more route (Caddy, nginx or
   Apache). Ask must be on Chiron's origin: a UI served from another host name cannot
-  carry the Chiron login to it.
+  carry the Chiron login to it. A Chiron on someone's own computer needs none: see
+  "A Chiron on your own computer" below.
 - Sessions in Django's database or cache backends (the default), whatever the cookie is
   named.
 - Docker with Compose v2.17 or newer (for `additional_contexts`).
-- A way to reach a model: an Anthropic API key, Amazon Bedrock through the machine's role
-  or an AWS profile, or a model server of your own. A Claude account (Pro or Max) logged in
-  to the container is for trying it yourself.
+- A way to reach a model: Claude (an Anthropic API key, or Amazon Bedrock through the
+  machine's role or an AWS profile), OpenAI or Google Gemini (through LiteLLM,
+  [compose.litellm.yml](compose.litellm.yml)), or a model on your own computer or network.
+  A Claude account (Pro or Max) logged in to the container is for trying it yourself.
+- **For data with PHI, a model approved for PHI.** Ask sends each question and what it
+  reads from Chiron (patient rows too, when the person may see them) to the model. With
+  PHI, use only a model service your organization has approved for PHI (covered by a
+  business associate agreement, a BAA), or a model on your own network. Never a personal
+  account.
 
 ## Install
 
@@ -156,18 +164,34 @@ in scope; the comment at the top of
 [templates/askpatch/ask_navbar.html](templates/askpatch/ask_navbar.html) has the form that
 reaches it through the settings module.
 
-**The model.** With an Anthropic API key, set `ANTHROPIC_API_KEY` in `.env`. For a model
-server of your own (Ollama natively; vLLM behind LiteLLM), set `ANTHROPIC_BASE_URL`,
-`ANTHROPIC_AUTH_TOKEN`, `DISABLE_PROMPT_CACHING=1` and
-`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`, and name its model in `CHIRON_MCP_ASK_MODELS`
-so every model slot uses it. For a Claude account, log the container in once, yourself, in a real
-terminal: `docker compose exec -it ask claude`, choose the subscription login, open the
-link it prints, approve, paste the code back, `/exit`. The login lives in the `ask-home`
-volume. For Bedrock, set `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` and `ANTHROPIC_MODEL`
-in `.env`; on an EC2 instance the role is used (its metadata hop limit must be 2 for a
-container to reach it), elsewhere add [compose.aws.yml](compose.aws.yml) for a profile in
-`~/.aws`. `CHIRON_MCP_ASK_MODELS` lists the models the page may switch between
-(`id=Label,...`; Haiku is the default when listed).
+**The model.** Set one of these in `.env` ([env.example](env.example) has them all):
+
+- *Claude with an Anthropic API key:* `ANTHROPIC_API_KEY`.
+- *Claude on Amazon Bedrock:* `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` and
+  `ANTHROPIC_MODEL`. On an EC2 instance the role is used (its metadata hop limit must be 2
+  for a container to reach it); elsewhere add [compose.aws.yml](compose.aws.yml) to
+  `COMPOSE_FILE` for a profile in `~/.aws`.
+- *OpenAI or Google Gemini:* through LiteLLM, which takes Ask's calls (Anthropic's format)
+  and passes them on in the provider's own. Keep the models you want in
+  [litellm.yaml](litellm.yaml), set `OPENAI_API_KEY` and/or `GEMINI_API_KEY` and a
+  `LITELLM_MASTER_KEY` (any long random string), name the models in
+  `CHIRON_MCP_ASK_MODELS`, and set `COMPOSE_FILE=compose.yml:compose.litellm.yml`. Claude,
+  and servers that speak OpenAI's API (vLLM, LM Studio), can be listed there too.
+- *A model on your own computer or network:* Ollama speaks Ask's format itself. Set
+  `ANTHROPIC_BASE_URL` (`http://host.docker.internal:11434` for Ollama on the same machine;
+  on Linux start Ollama with `OLLAMA_HOST=0.0.0.0`), `ANTHROPIC_AUTH_TOKEN`,
+  `DISABLE_PROMPT_CACHING=1` and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`, and name its
+  model in `CHIRON_MCP_ASK_MODELS` so every model slot uses it. It needs good tool calling
+  and a context of 64k tokens or more.
+- *A Claude account,* only to try it yourself: log the container in once, in a real
+  terminal: `docker compose exec -it ask claude`, choose the subscription login, open the
+  link it prints, approve, paste the code back, `/exit`. The login lives in the `ask-home`
+  volume.
+
+`CHIRON_MCP_ASK_MODELS` lists the models the page may switch between (`id=Label,...`;
+Haiku is the default when listed). Ask was built and tuned on Claude. Other models answer
+through the same tools and checks, but compare a few of their answers with Chiron before
+relying on them. **With PHI, use only a model approved for PHI** (above).
 
 **Check it**, through the same front door a browser uses:
 
@@ -204,6 +228,27 @@ Anyone sees their own; a Django superuser (or a member of the group
 each dataset. The ledger
 behind it keeps one row per answer and no question text, in the `ask-home` volume. See
 "The usage page" in the main README.
+
+## A Chiron on your own computer
+
+A Chiron someone runs on their own computer (Django's dev server with the UI's dev
+server, or Chiron in Docker) needs no web server. The browser opens Ask directly at
+`http://localhost:8900`, and because Chiron and Ask are both on `localhost`, it shows Ask
+the Chiron login. The steps change in four places:
+
+- In `.env`, `PUBLIC_URL` is where Chiron opens (the UI's dev server, for example
+  `http://localhost:3000`), and `ASK_URL=http://localhost:8900` (the port in `ASK_BIND`).
+- There is no route: skip step 3.
+- The tab points at Ask itself: `VITE_ASK_URL=http://localhost:8900 npm run dev` for the
+  dev server, or `--build-arg VITE_ASK_URL=http://localhost:8900` for a UI image.
+- Open Chiron as `http://localhost:...`, not `127.0.0.1`: the login cookie belongs to the
+  host name, and Ask is reached as `localhost`.
+
+The databases: a Postgres on the computer, or a Postgres container that publishes its
+port, is `host.docker.internal:<port>`. For a Chiron in Docker whose database publishes no
+port, Ask joins its network instead ([compose.network.yml](compose.network.yml):
+`CHIRON_NETWORK` and `COMPOSE_FILE=compose.yml:compose.network.yml` in `.env`), and the
+URLs name the database service (`db:5432`). `python3 check.py` checks Ask at `ASK_URL`.
 
 ## What people get
 
@@ -259,6 +304,13 @@ Reports people saved through Ask stay, as any saved report would.
   works as before) and a reinstall, 10 of 10 again; a setting changed with `up -d`; an
   update with `git pull` and `up -d --build`. It found the nginx redirect dropping a
   published port (now relative) and `check.py` missing a figure written "10 000".
+- A Chiron on a Mac with no web server (23 November 2026): Chiron's Django dev server and
+  the UI's Vite dev server, Ask opened directly at `ASK_URL`; `check.py` 10 of 10, and in
+  Chrome the Ask tab inside the dev UI answered and its Query button loaded the cohort
+  (686 patients) into Chiron's query builder in the top window. Then Ask on a Docker
+  Chiron's network (`compose.network.yml`, the database as `db:5432`), 10 of 10; and every
+  model call through LiteLLM (`compose.litellm.yml`, v1.106.12) to a model behind an
+  OpenAI-format endpoint, 10 of 10. Not tried yet: real OpenAI or Gemini keys, a Linux host.
 
 ## Setup guide for an AI agent
 
@@ -271,7 +323,8 @@ PUBLIC_URL      = https://chiron.example.org       (where people open Chiron, wi
 WEB_SERVER      = nginx                            (caddy, nginx or apache; its config file)
 METADATA_DB     = postgresql://user:pass@host.docker.internal:5432/chiron_meta
 WAREHOUSE_URL   = postgresql://user:pass@host.docker.internal:5432/chiron
-MODEL           = api key | bedrock | own model server | claude account (a trial)
+MODEL           = claude api key | bedrock | openai or gemini (litellm) | local model (ollama) | claude account (a trial)
+PHI             = yes | no                         (does the data hold PHI?)
 
 Add the Ask tab to this Chiron with chiron-mcp's askpatch, without changing Chiron.
 Repo: https://github.com/TojiFushiguro/chiron-mcp, clone to ~/chiron-mcp (git pull if there).
@@ -280,7 +333,9 @@ Read askpatch/README.md first.
 Limits: touch only ~/chiron-mcp/askpatch, the chiron-askpatch container, the one web
 server snippet, and the UI build. Do not edit Chiron's code, settings or databases, and
 do not run migrations. Never print or paste askpatch/.env. Ask me before reloading the
-web server and before rebuilding the UI.
+web server and before rebuilding the UI. If PHI is yes, confirm with me that the model is
+approved for PHI (a BAA, or a model on the organization's own network) before
+connecting it.
 
 1. Check Docker (Compose 2.17+) and that the two databases answer from a container:
    docker run --rm postgres:17 pg_isready -d "<each URL>". If one does not, stop and tell me.
@@ -288,14 +343,17 @@ web server and before rebuilding the UI.
    docker compose up -d --build. Show me the last lines of the build if it fails.
 3. Show me the snippet from askpatch/proxy/ for WEB_SERVER, adapted to the prefix in
    PUBLIC_URL if any, and where it goes in the config; apply it when I agree, then reload.
+   If Chiron runs on this computer with no web server, skip this and follow README
+   "A Chiron on your own computer" (ASK_URL, and the tab pointing at Ask itself).
 4. The UI: copy askpatch/ui/ask.tsx to its src/ask.tsx and wrap the settings in
    src/overrideConfig.tsx with withAsk (README, "The Ask tab"; if that file already has an
    Ask tab at http://localhost:8900, apply askpatch/ui-ask-tab.patch instead); then rebuild
    it with VITE_ASK_URL=/ask the way this deployment builds it, when I agree.
-5. The model: for an API key tell me to add ANTHROPIC_API_KEY to .env myself; for Bedrock
-   or an own model server set the lines from README "The model" in .env; for a Claude
-   account tell me to run `docker compose exec -it ask claude` myself and log in. Then
-   docker compose up -d.
+5. The model: for a Claude API key, or OpenAI or Gemini keys, tell me to add the key to
+   .env myself; for OpenAI or Gemini also set COMPOSE_FILE, LITELLM_MASTER_KEY and the
+   models (README "The model", litellm.yaml); for Bedrock or a local model set the lines
+   from README "The model" in .env; for a Claude account tell me to run
+   `docker compose exec -it ask claude` myself and log in. Then docker compose up -d.
 6. python3 askpatch/check.py --user <an account I name> and show me every line.
 7. Tell me what was added (container, snippet, UI switch), what was not touched, and how
    to remove it.

@@ -7,6 +7,13 @@ This guide shows how to add Ask to a Chiron you already run, and how to remove i
 Ask doesn't change Chiron. You can take it out at any time, and Chiron goes back to
 exactly how it was.
 
+> [!WARNING]
+> **If your Chiron holds PHI (real patient data), use a PHI-safe AI.** To answer, Ask
+> sends the question and the data it looks up to the AI model. Use only an AI service your
+> organization has approved for PHI (one covered by a business associate agreement, a
+> BAA), or a model running on your own computer or network. Never use a personal account
+> or a free plan. If you're not sure, ask your privacy or compliance office.
+
 ## In short
 
 You add three things next to your Chiron:
@@ -16,7 +23,8 @@ You add three things next to your Chiron:
    or Caddy).
 3. **The Ask tab.** One small file and one build setting in the Chiron UI.
 
-Remove those three and Ask is gone.
+Remove those three and Ask is gone. If Chiron runs on your own computer, you don't even
+need the web server part: see [Chiron on your own computer](#chiron-on-your-own-computer).
 
 ## What people get
 
@@ -56,15 +64,19 @@ flowchart LR
   with the Ask tab
 - **Your Chiron source code and Django project folder** on the same machine
 - **Docker** with Compose 2.17 or newer, and about 1.3 GB of free disk
-- **Access to the web server** in front of Chiron (nginx, Apache or Caddy)
-- **An AI model**: an Anthropic API key, Amazon Bedrock, or a model server you run yourself
+- **Access to the web server** in front of Chiron (nginx, Apache or Caddy). Not needed if
+  Chiron runs on your own computer.
+- **An AI model**: Claude, OpenAI, Gemini, or a model on your own computer. With PHI, a
+  PHI-safe one (see the warning above).
 
 Other Chiron versions haven't been tested. The check in step 7 tells you quickly if
 something doesn't fit.
 
 ## Add Ask in 7 steps
 
-Do these once, on the machine that runs Chiron.
+Do these once, on the machine that runs Chiron. Running Chiron on your own laptop or
+desktop? Follow the same steps with the small changes in
+[Chiron on your own computer](#chiron-on-your-own-computer).
 
 ### Step 1. Download the add-on
 
@@ -102,33 +114,64 @@ Good to know:
 
 ### Step 3. Pick the AI model
 
-Add **one** of these to `.env`:
+> [!IMPORTANT]
+> If your data has PHI, pick an AI service your organization has approved for PHI, or a
+> model on your own computer or network. See the warning at the top.
 
-| Model | Add to `.env` |
+Pick **one** of these and add its lines to `.env`:
+
+| AI model | What to add to `.env` |
 | --- | --- |
-| Anthropic API key | `ANTHROPIC_API_KEY=sk-ant-...` |
-| Amazon Bedrock | `CLAUDE_CODE_USE_BEDROCK=1` and `AWS_REGION=us-east-1` |
-| Your own model server | The five lines below |
+| **Claude** with an Anthropic API key | `ANTHROPIC_API_KEY=sk-ant-...` |
+| **Claude** on Amazon Bedrock | `CLAUDE_CODE_USE_BEDROCK=1` and `AWS_REGION=us-east-1` |
+| **OpenAI** or **Gemini** | The lines under "OpenAI or Gemini" below |
+| **A model on your own computer** (Ollama) | The lines under "A model on your own computer" below |
 
-For your own model server (Ollama, or vLLM behind LiteLLM):
+**OpenAI or Gemini.** Ask talks to these through a small translator, LiteLLM, which comes
+with the add-on and starts next to Ask. Add your key (or both) and these lines:
 
 ```bash
-ANTHROPIC_BASE_URL=http://your-model-server:11434
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+# any long random string, for example from: openssl rand -hex 24
+LITELLM_MASTER_KEY=...
+# the models people can pick, as id=Label, separated by commas
+CHIRON_MCP_ASK_MODELS=gpt-6.2-sol=GPT-6.2 Sol,gemini-3.8-flash=Gemini 3.8 Flash
+# start the translator together with Ask
+COMPOSE_FILE=compose.yml:compose.litellm.yml
+```
+
+The models are listed in [litellm.yaml](litellm.yaml). To use other OpenAI or Gemini
+models, change the names there and in `CHIRON_MCP_ASK_MODELS`.
+
+**A model on your own computer** (Ollama). Nothing leaves your computer, which makes it
+a PHI-safe choice:
+
+```bash
+ANTHROPIC_BASE_URL=http://host.docker.internal:11434
 ANTHROPIC_AUTH_TOKEN=not-needed
 DISABLE_PROMPT_CACHING=1
 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 CHIRON_MCP_ASK_MODELS=your-model=Your model
 ```
 
+- The model needs good tool calling and a context of at least 64k tokens. In Ollama, make
+  a version of the model with `PARAMETER num_ctx 65536` in its Modelfile.
+- On Linux, start Ollama with `OLLAMA_HOST=0.0.0.0`, so Ask's container can reach it.
+- Other model servers (vLLM, LM Studio) work through the translator: add them to
+  `litellm.yaml`.
+
 Good to know:
 
 - **Bedrock on an EC2 server** uses the server's own AWS role (its metadata hop limit
-  must be 2). Anywhere else, also set `AWS_PROFILE` in `.env`, and add
-  `-f compose.yml -f compose.aws.yml` to every `docker compose` command.
-- **The model menu** is optional. `CHIRON_MCP_ASK_MODELS` lists the models people can
-  choose from, as `id=Label`, separated by commas. For example:
+  must be 2). Anywhere else, set `AWS_PROFILE` in `.env` and add
+  `COMPOSE_FILE=compose.yml:compose.aws.yml`.
+- **The model menu:** `CHIRON_MCP_ASK_MODELS` lists the models people can switch between.
+  With Claude, for example:
   `CHIRON_MCP_ASK_MODELS=claude-haiku-5-5=Haiku 5.5,claude-sonnet-5-5=Sonnet 5.5`.
   On Bedrock, the ids start with `us.anthropic.`.
+- **Ask was built and tested mostly with Claude.** Other models can work well too, but
+  compare a few of their answers with Chiron before you rely on them.
 
 ### Step 4. Start Ask
 
@@ -141,6 +184,8 @@ The first start takes a few minutes. Ask is ready when `docker compose ps` shows
 **healthy**.
 
 ### Step 5. Add the `/ask` address to your web server
+
+On your own computer, skip this step.
 
 This sends `/ask` on your Chiron address to Ask.
 
@@ -206,7 +251,8 @@ In the Chiron UI source folder (`is4r-chiron-ui`):
    VITE_ASK_URL=/ask npm run build
    ```
 
-   Use `pnpm run build` instead if that's how you build. If you build the UI with
+   Use `pnpm run build` instead if that's how you build. On your own computer, use
+   `VITE_ASK_URL=http://localhost:8900` instead of `/ask`. If you build the UI with
    Docker, see [Building the UI with Docker](#building-the-ui-with-docker).
 
 ### Step 7. Check that it works
@@ -219,6 +265,52 @@ Pick a Chiron account that can see that dataset. Every line should say **PASS**.
 password is needed: the check makes a short login inside Ask by itself.
 
 Then open Chiron, pick a dataset and click the **Ask** tab.
+
+## Chiron on your own computer
+
+If Chiron runs on your own laptop or desktop, either with its development servers (Django
+and the UI's dev server) or in Docker, you don't need a web server. Your browser opens Ask
+directly at `http://localhost:8900`, and because Chiron and Ask are both on `localhost`,
+Ask can see that you are logged in to Chiron.
+
+Follow the 7 steps with these changes:
+
+- **Step 2:** `PUBLIC_URL` is the address where you open Chiron, for example
+  `http://localhost:3000`. Also add this line:
+
+  ```bash
+  ASK_URL=http://localhost:8900
+  ```
+
+- **Step 5:** skip it.
+- **Step 6:** point the tab at Ask directly:
+  - with the UI's dev server: `VITE_ASK_URL=http://localhost:8900 npm run dev`
+  - with a UI in Docker: build its image with `--build-arg VITE_ASK_URL=http://localhost:8900`
+- **Always open Chiron at `http://localhost:...`**, not `http://127.0.0.1:...`. Your login
+  is saved for the name `localhost`, and that's the name Ask uses.
+
+**Where are the databases?**
+
+- **Postgres on your computer, or in Docker with its port published** (for example
+  `5433:5432`): use `host.docker.internal` and that port in Step 2, as in
+  `postgresql://USER:PASSWORD@host.docker.internal:5433/chiron`.
+- **Postgres in Docker without a published port:** let Ask join Chiron's Docker network.
+  Find the network's name with `docker network ls`, then add these lines to `.env`:
+
+  ```bash
+  CHIRON_NETWORK=the-network-name
+  COMPOSE_FILE=compose.yml:compose.network.yml
+  ```
+
+  In the database addresses, use the database's name inside Docker (often `db`) and its
+  inside port, as in `postgresql://USER:PASSWORD@db:5432/chiron`.
+
+If port 8900 is already taken on your computer, pick another one, for example 8906:
+`ASK_BIND=127.0.0.1:8906`, `ASK_URL=http://localhost:8906`, and
+`VITE_ASK_URL=http://localhost:8906`.
+
+Using the translator for OpenAI or Gemini and Chiron's Docker network together? List all
+three files: `COMPOSE_FILE=compose.yml:compose.litellm.yml:compose.network.yml`.
 
 ## Who can see what
 
@@ -234,7 +326,8 @@ Ask follows Chiron's own permissions. Nobody gets more than their account allows
 
 ### The Admin page
 
-Open `/ask/usage` on your Chiron address.
+Open `/ask/usage` on your Chiron address (`http://localhost:8900/usage` on your own
+computer).
 
 - **Superusers** see everyone and can change access: open the **People** tab, click
   **Edit** next to a person, then set the level and the names switch for each dataset.
@@ -253,8 +346,9 @@ An old conversation may repeat an earlier "no".
 ## What gets sent to the AI model
 
 To answer, Ask sends the question and the data it looked up (including any patient rows
-it shows) to the model you picked. If you run your own model server, nothing leaves your
-network.
+it shows) to the model you picked. That's why data with PHI needs a PHI-safe AI (see the
+warning at the top). If you run the model on your own computer or network, nothing leaves
+it.
 
 Ask's usage history and logs don't store question text. The trace saved with each answer
 does, on your own server.
@@ -264,11 +358,12 @@ does, on your own server.
 | I want to... | Do this |
 | --- | --- |
 | Change a setting (model, access cap, ...) | Edit `.env`, then run `docker compose up -d` |
-| See usage, costs and errors | Open `/ask/usage` |
+| See usage, costs and errors | Open the Admin page, `/ask/usage` |
 | Watch what Ask is doing | `docker compose logs -f --no-log-prefix ask \| grep ' ask '` |
 | Update Ask | `git pull`, then `docker compose up -d --build`, then `python3 check.py` |
 
-Updates keep conversations, settings and usage history.
+Updates keep conversations, settings and usage history. Extra files you turned on with
+`COMPOSE_FILE` in `.env` are picked up by every command automatically.
 
 ## Turn Ask off for a while
 
@@ -282,13 +377,16 @@ works normally. Ask stays off after a reboot until you start it again.
 
 ## Remove Ask completely
 
-1. `docker compose down -v` stops Ask and **deletes** its conversations and usage history.
-   This can't be undone. Leave out `-v` to keep them.
-2. `docker image rm chiron-askpatch` frees the disk space.
-3. Delete the `/ask` lines from your web server, and reload it.
+1. `docker compose down -v` stops Ask (and the translator, if you used it) and
+   **deletes** its conversations and usage history. This can't be undone. Leave out `-v`
+   to keep them.
+2. `docker image rm chiron-askpatch` frees the disk space. If you used the translator,
+   also run `docker image rm ghcr.io/berriai/litellm:v1.106.12`.
+3. Delete the `/ask` lines from your web server, and reload it (not needed on your own
+   computer).
 4. Rebuild the UI without `VITE_ASK_URL`, and deploy it. To remove the code too, delete
    `src/ask.tsx` and undo the two changes in `src/overrideConfig.tsx`.
-5. Delete the `chiron-mcp` folder. Its `.env` has your database password.
+5. Delete the `chiron-mcp` folder. Its `.env` has your database password and AI keys.
 
 Chiron is now exactly as before. The only things left are what people did through Ask
 that Chiron allows anyway: saved reports, patient groups opened in the query builder, and
@@ -307,11 +405,12 @@ conversations come back too. If you deleted the folder, start from step 1.
 | Ask can't connect to the database | Use `host.docker.internal`, not `localhost`. On Linux, let Postgres accept Docker connections: set `listen_addresses`, and add Docker's network (often `172.16.0.0/12`) to `pg_hba.conf`. |
 | The build fails on a package version conflict | Add `USE_CONSTRAINTS=0` to `.env` and build again. |
 | `/ask` shows "502 Bad Gateway" | Ask is stopped, or the web server points to the wrong place. Run `docker compose ps`, and check the address in your web server lines. |
-| Ask says "Log in to Chiron first" but you are logged in | Open Ask only through `/ask` on Chiron's own address. |
+| Ask says "Log in to Chiron first" but you are logged in | Open Ask only through `/ask` on Chiron's own address. On your own computer: open Chiron at `localhost`, not `127.0.0.1`, and make sure `ASK_URL` and `VITE_ASK_URL` use the port in `ASK_BIND`. |
 | Answers appear all at once, or stop after a minute | The web server is buffering or timing out. Use the web server lines exactly as given. |
-| An answer stops after 4 minutes | That's the time limit per answer (`CHIRON_MCP_TURN_SECONDS`, 240 seconds). Ask a smaller question, or raise the limit. |
-| "Invalid API key" or another model error | Fix the model lines in `.env`, then run `docker compose up -d`. |
-| No Ask tab in Chiron | Check the two changes in `src/overrideConfig.tsx`, and that you built with `VITE_ASK_URL=/ask`. |
+| An answer stops after 4 minutes | That's the time limit per answer (`CHIRON_MCP_TURN_SECONDS`, 240 seconds). Ask a smaller question, or raise the limit. Local models are often slower. |
+| "Invalid API key" or another model error | Fix the model lines in `.env`, then run `docker compose up -d`. With OpenAI or Gemini, check `docker compose logs litellm` too. |
+| OpenAI or Gemini: "model not found" | Each name in `CHIRON_MCP_ASK_MODELS` must match a `model_name` in `litellm.yaml`, and the provider must still offer that model. |
+| No Ask tab in Chiron | Check the two changes in `src/overrideConfig.tsx`, and that you built with `VITE_ASK_URL`. |
 | Ask won't show names after you turned them on | Start a new conversation. |
 
 ## Extra options
@@ -319,7 +418,8 @@ conversations come back too. If you deleted the folder, start from step 1.
 ### Building the UI with Docker
 
 In the UI's Dockerfile, add `ARG VITE_ASK_URL` and `ENV VITE_ASK_URL=${VITE_ASK_URL}`
-next to the `VITE_MUI_KEY` lines. Then build with `--build-arg VITE_ASK_URL=/ask`.
+next to the `VITE_MUI_KEY` lines. Then build with `--build-arg VITE_ASK_URL=/ask` (or
+`--build-arg VITE_ASK_URL=http://localhost:8900` on your own computer).
 
 ### A different settings module
 
@@ -340,12 +440,16 @@ run it directly on the server instead.
 ### Trying it with your own Claude account
 
 For a quick test by yourself, you can log the container in to your own Claude account
-with `docker compose exec -it ask claude`. Don't use this for a team.
+with `docker compose exec -it ask claude`. Don't use this for a team, and never with PHI.
 
 ## Tested on
 
 - Chiron 6.5.4 with UI 4.3.0, behind nginx, Apache and Caddy: every step, the check,
   turning Ask off, removing it, adding it back, and updating.
-- Models: Amazon Bedrock, and a model server running on the same network.
-- **Not tested yet:** a Linux server (so far every test ran on a Mac with Docker Desktop),
-  and a real Anthropic API key.
+- Chiron on a Mac with no web server: Chiron's development servers, with the Ask tab,
+  answers and the Query button tried in a real browser; and Ask joined to the Docker
+  network of a Chiron running in Docker.
+- AI models: Claude on Amazon Bedrock; a model on the same computer (Ollama), both
+  directly and through the OpenAI/Gemini translator.
+- **Not tested yet:** real OpenAI, Gemini and Anthropic API keys, and a Linux server (so
+  far every test ran on a Mac with Docker Desktop).

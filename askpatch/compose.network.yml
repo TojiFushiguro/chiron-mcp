@@ -1,0 +1,17 @@
+# For a Chiron that runs in Docker on this machine and does not publish its database
+# port: Ask joins that Chiron's Docker network and reaches the database by its service
+# name. Name the network in .env (CHIRON_NETWORK; `docker network ls` lists them), write
+# the database URLs with the service name (postgresql://USER:PASSWORD@db:5432/chiron),
+# and turn this file on with one line in .env, which every docker compose command reads:
+#
+#   COMPOSE_FILE=compose.yml:compose.network.yml
+#
+# (with LiteLLM too: COMPOSE_FILE=compose.yml:compose.litellm.yml:compose.network.yml)
+services:
+  ask:
+    networks: [default, chiron]
+
+networks:
+  chiron:
+    name: ${CHIRON_NETWORK:?set CHIRON_NETWORK in askpatch/.env (see docker network ls)}
+    external: true

@@ -1,6 +1,7 @@
-# Bedrock with credentials from an AWS profile on this machine (SSO or keys in ~/.aws):
+# Bedrock with credentials from an AWS profile on this machine (SSO or keys in ~/.aws).
+# Turn it on with one line in .env, which every docker compose command then reads:
 #
-#   docker compose -f compose.yml -f compose.aws.yml up -d
+#   COMPOSE_FILE=compose.yml:compose.aws.yml
 #
 # with CLAUDE_CODE_USE_BEDROCK=1, AWS_PROFILE and AWS_REGION set in .env. A machine with
 # an instance role (EC2) needs none of this: set CLAUDE_CODE_USE_BEDROCK=1 and AWS_REGION

@@ -1,0 +1,37 @@
+# OpenAI or Google Gemini models for Ask. Ask speaks Anthropic's API; LiteLLM takes its
+# calls and passes each one on to OpenAI or Google in their own format. The models are in
+# litellm.yaml and the keys in .env. Turn it on with one line in .env, which every
+# docker compose command then reads:
+#
+#   COMPOSE_FILE=compose.yml:compose.litellm.yml
+#
+# LiteLLM is reachable only from Ask: no port of it is published on this machine.
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:${LITELLM_VERSION:-v1.106.12}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      # the key Ask uses to call LiteLLM: any long random string (openssl rand -hex 24)
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in askpatch/.env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # for Claude models listed in litellm.yaml too
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./litellm.yaml:/app/config.yaml:ro
+    extra_hosts:
+      # a model server on this machine is host.docker.internal from here, on Linux too
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  ask:
+    depends_on:
+      - litellm
+    environment:
+      # every model call goes to LiteLLM, with its key; an Anthropic key in .env is for
+      # LiteLLM only, so Ask itself sends none
+      ANTHROPIC_BASE_URL: http://litellm:4000
+      ANTHROPIC_AUTH_TOKEN: ${LITELLM_MASTER_KEY}
+      ANTHROPIC_API_KEY: ""
+      DISABLE_PROMPT_CACHING: "1"
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
