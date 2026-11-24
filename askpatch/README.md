@@ -52,29 +52,35 @@ of the upstream pull request).
    caddy reload --config /etc/caddy/Caddyfile   # Caddy
    ```
 
-4. Turn the tab on in the Chiron UI and rebuild it:
+4. Turn the tab on in the Chiron UI and rebuild it: copy [ui/ask.tsx](ui/ask.tsx) in and wrap
+   the settings in `src/overrideConfig.tsx` with it (two lines, see "The Ask tab" below):
 
    ```bash
    cd /path/to/is4r-chiron-ui
-   git apply /path/to/chiron-mcp/askpatch/ui-ask-tab.patch   # once, if src/overrideConfig.tsx has no VITE_ASK_URL yet
-   VITE_ASK_URL=/ask npm run build                            # deploy the build as you normally do
+   cp /path/to/chiron-mcp/askpatch/ui/ask.tsx src/ask.tsx
+   # src/overrideConfig.tsx:  import { withAsk } from "./ask";
+   #                          export const overrideConfig = withAsk({ ...as before... });
+   VITE_ASK_URL=/ask npm run build      # deploy the build as you normally do
    ```
 
-5. Connect a model and check:
+5. Connect a model and check. In `.env`: `ANTHROPIC_API_KEY`, or the Bedrock lines, or a
+   model server of your own (see "The model" below), then `docker compose up -d`:
 
    ```bash
-   docker compose exec -it ask claude   # choose the subscription login, approve in the browser, /exit
-                                        # or Bedrock: CLAUDE_CODE_USE_BEDROCK=1, AWS_REGION, ANTHROPIC_MODEL in .env
    python3 check.py                     # every line PASS
    ```
 
 **Remove it** in three:
 
 ```bash
-cd chiron-mcp/askpatch && docker compose down -v                              # container, login, conversations
+cd chiron-mcp/askpatch && docker compose down -v && docker image rm chiron-askpatch   # container, login, conversations, image
 # delete the /ask snippet from the web server and reload it (same reload command as step 3)
-cd /path/to/is4r-chiron-ui && git apply -R /path/to/chiron-mcp/askpatch/ui-ask-tab.patch && npm run build
+cd /path/to/is4r-chiron-ui && npm run build    # without VITE_ASK_URL: no tab
 ```
+
+**Pause it** with `docker compose stop` and `docker compose start`: everything is kept, and
+meanwhile the tab shows the web server's error page. `docker compose down` without `-v`
+keeps the conversations and usage history for a later `up -d`.
 
 Chiron's code, settings and databases are never touched, so there is nothing else to undo.
 The rest of this page explains each step.
@@ -92,8 +98,9 @@ The rest of this page explains each step.
 - Sessions in Django's database or cache backends (the default), whatever the cookie is
   named.
 - Docker with Compose v2.17 or newer (for `additional_contexts`).
-- A way to reach a model: a Claude account (Pro or Max) to log the container in to, or
-  Amazon Bedrock through the machine's role or an AWS profile.
+- A way to reach a model: an Anthropic API key, Amazon Bedrock through the machine's role
+  or an AWS profile, or a model server of your own. A Claude account (Pro or Max) logged in
+  to the container is for trying it yourself.
 
 ## Install
 
@@ -117,16 +124,26 @@ that serves Chiron, then reload it. It forwards `/ask` to `127.0.0.1:8900` (`ASK
 the route is `<prefix>/ask`.
 
 **The Ask tab.** In the Chiron UI (`is4r-chiron-ui`), the tab is a build-time switch:
-with `VITE_ASK_URL=/ask` the build has it, without it the UI is as before. A checkout that
-does not have the switch yet gets it with
+with `VITE_ASK_URL=/ask` the build has it, without it the UI is as before.
+[ui/ask.tsx](ui/ask.tsx) holds the tab and its page: copy it to the UI's `src/ask.tsx` and
+wrap the deployment's own settings in `src/overrideConfig.tsx`, the UI's place for a
+deployment's changes:
 
-```bash
-cd is4r-chiron-ui && git apply /path/to/chiron-mcp/askpatch/ui-ask-tab.patch   # or: patch -p1 <
-VITE_ASK_URL=/ask npm run build
+```tsx
+import { withAsk } from "./ask";
+
+export const overrideConfig = withAsk({
+  // ...the settings that were there, unchanged...
+});
 ```
 
-(one file, `src/overrideConfig.tsx`; the same change is proposed upstream). For the
-built-in Django UI, two settings lines put an Ask link in the navbar, in `settings.py`
+then `VITE_ASK_URL=/ask npm run build` (with the UI's Dockerfile: `ARG VITE_ASK_URL` and
+`ENV VITE_ASK_URL=${VITE_ASK_URL}` beside the `VITE_MUI_KEY` lines, and
+`--build-arg VITE_ASK_URL=/ask`). Chiron's five tabs come first, or the settings' own tabs
+when they list them, then Ask. To take it out, build without the switch; delete
+`src/ask.tsx` and the two lines to remove the code too. A UI whose `overrideConfig.tsx`
+already has an Ask tab at `http://localhost:8900` (this repository's vendored UI) takes
+[ui-ask-tab.patch](ui-ask-tab.patch) instead. For the built-in Django UI, two settings lines put an Ask link in the navbar, in `settings.py`
 after `TEMPLATES` is defined:
 
 ```python
@@ -139,7 +156,11 @@ in scope; the comment at the top of
 [templates/askpatch/ask_navbar.html](templates/askpatch/ask_navbar.html) has the form that
 reaches it through the settings module.
 
-**The model.** For a Claude account, log the container in once, yourself, in a real
+**The model.** With an Anthropic API key, set `ANTHROPIC_API_KEY` in `.env`. For a model
+server of your own (Ollama natively; vLLM behind LiteLLM), set `ANTHROPIC_BASE_URL`,
+`ANTHROPIC_AUTH_TOKEN`, `DISABLE_PROMPT_CACHING=1` and
+`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`, and name its model in `CHIRON_MCP_ASK_MODELS`
+so every model slot uses it. For a Claude account, log the container in once, yourself, in a real
 terminal: `docker compose exec -it ask claude`, choose the subscription login, open the
 link it prints, approve, paste the code back, `/exit`. The login lives in the `ask-home`
 volume. For Bedrock, set `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` and `ANTHROPIC_MODEL`
@@ -211,9 +232,11 @@ The route and the tab are the same. The Claude login is the user's that runs it
 
 ## Undo
 
-`docker compose down -v` (removes the container, its login and conversations), delete the
-proxy snippet and reload the web server, rebuild the UI without `VITE_ASK_URL` (or
-`git apply -R ui-ask-tab.patch`), remove the two navbar settings lines if you added them.
+`docker compose down -v` (removes the container, its login and conversations; without `-v`
+they are kept for a return) and `docker image rm chiron-askpatch`, delete the proxy snippet
+and reload the web server, rebuild the UI without `VITE_ASK_URL` (delete `src/ask.tsx` and
+the two lines in `src/overrideConfig.tsx` to take the code out too), remove the two navbar
+settings lines if you added them.
 Chiron's code, settings and databases were never changed, so nothing there to undo.
 Reports people saved through Ask stay, as any saved report would.
 
@@ -229,6 +252,13 @@ Reports people saved through Ask stay, as any saved report would.
   `within` timing tests, which need the run-time fixes, inside the container; four
   `git pull` and rebuild upgrades; removal and reinstall. Details and what it found in
   [docs/plan-askpatch.md](../docs/plan-askpatch.md).
+- A plain Chiron 6.5 behind nginx, its UI with no Ask code at all (23 November 2026): a
+  fresh clone, the steps above with the tab from `ui/ask.tsx`, a local model through
+  `ANTHROPIC_BASE_URL`; `check.py` 10 of 10; then a pause, a full removal (`down -v`, the
+  route out, the UI built without the switch: `/ask` falls through to the UI and Chiron
+  works as before) and a reinstall, 10 of 10 again; a setting changed with `up -d`; an
+  update with `git pull` and `up -d --build`. It found the nginx redirect dropping a
+  published port (now relative) and `check.py` missing a figure written "10 000".
 
 ## Setup guide for an AI agent
 
@@ -241,7 +271,7 @@ PUBLIC_URL      = https://chiron.example.org       (where people open Chiron, wi
 WEB_SERVER      = nginx                            (caddy, nginx or apache; its config file)
 METADATA_DB     = postgresql://user:pass@host.docker.internal:5432/chiron_meta
 WAREHOUSE_URL   = postgresql://user:pass@host.docker.internal:5432/chiron
-MODEL           = claude account | bedrock
+MODEL           = api key | bedrock | own model server | claude account (a trial)
 
 Add the Ask tab to this Chiron with chiron-mcp's askpatch, without changing Chiron.
 Repo: https://github.com/ri-ds/chiron-mcp, clone to ~/chiron-mcp (git pull if there).
@@ -258,10 +288,14 @@ web server and before rebuilding the UI.
    docker compose up -d --build. Show me the last lines of the build if it fails.
 3. Show me the snippet from askpatch/proxy/ for WEB_SERVER, adapted to the prefix in
    PUBLIC_URL if any, and where it goes in the config; apply it when I agree, then reload.
-4. The UI: if its src/overrideConfig.tsx has no VITE_ASK_URL, apply askpatch/ui-ask-tab.patch;
-   then rebuild it with VITE_ASK_URL=/ask the way this deployment builds it, when I agree.
-5. The model: for a Claude account tell me to run `docker compose exec -it ask claude`
-   myself and log in; for Bedrock set the three lines in .env and restart the container.
+4. The UI: copy askpatch/ui/ask.tsx to its src/ask.tsx and wrap the settings in
+   src/overrideConfig.tsx with withAsk (README, "The Ask tab"; if that file already has an
+   Ask tab at http://localhost:8900, apply askpatch/ui-ask-tab.patch instead); then rebuild
+   it with VITE_ASK_URL=/ask the way this deployment builds it, when I agree.
+5. The model: for an API key tell me to add ANTHROPIC_API_KEY to .env myself; for Bedrock
+   or an own model server set the lines from README "The model" in .env; for a Claude
+   account tell me to run `docker compose exec -it ask claude` myself and log in. Then
+   docker compose up -d.
 6. python3 askpatch/check.py --user <an account I name> and show me every line.
 7. Tell me what was added (container, snippet, UI switch), what was not touched, and how
    to remove it.

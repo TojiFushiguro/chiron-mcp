@@ -150,7 +150,9 @@ def main():
         check("Ask answers a question", False, "the container is not logged in to a model yet: "
               "docker compose exec -it ask claude, then /login (or set the Bedrock lines in .env)")
     else:
-        figures = {int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", answer)}
+        # a figure may be grouped with commas or spaces: "10,000", "10 000"
+        figures = {int(re.sub(r"[, \u00a0\u202f]", "", n))
+                   for n in re.findall(r"\d{1,3}(?:[, \u00a0\u202f]\d{3})+(?!\d)|\d+", answer)}
         check("Ask answers a question with Chiron's count", bool(answer) and count in figures,
               (answer or error or f"HTTP {status}")[:140].replace("\n", " "))
         # The events of an answer arrive over its whole run; a proxy that buffers hands
