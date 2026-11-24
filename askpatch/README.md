@@ -10,9 +10,9 @@ the three away and Chiron is as it was. The models Ask answers with are configur
 | The `/ask` route | One snippet in the web server that already serves Chiron ([proxy/](proxy/)) | Nothing. Ask is served on Chiron's address, which is how it knows who is logged in |
 | The Ask tab | A build-time switch in the Chiron UI, `VITE_ASK_URL` ([ui-ask-tab.patch](ui-ask-tab.patch)); for the built-in Django UI, a navbar include ([templates/](templates/askpatch/ask_navbar.html)) | Unset, there is no tab and nothing else changes |
 
-[Ask-add-on-guide.pdf](Ask-add-on-guide.pdf) is this, written out for the person who looks
-after a Chiron deployment: how it works, the steps, day to day, removal, troubleshooting
-(`guide/make_guide.py` rebuilds it). [Chiron-upstream-changes.pdf](Chiron-upstream-changes.pdf)
+[guide.md](guide.md) is the step-by-step guide for the person who looks after a Chiron
+deployment: what people get, adding Ask, checking it, who can see what, turning it off,
+removing it, and what to do when something goes wrong. [Chiron-upstream-changes.pdf](Chiron-upstream-changes.pdf)
 is the write-up of the two changes above for the Chiron developers, with the diffs
 (`guide/make_upstream.py` rebuilds it from the patch files).
 
@@ -29,7 +29,7 @@ of the upstream pull request).
 1. Get it and describe your Chiron:
 
    ```bash
-   git clone https://github.com/ri-ds/chiron-mcp.git
+   git clone https://github.com/TojiFushiguro/chiron-mcp.git
    cd chiron-mcp/askpatch
    cp env.example .env && chmod 600 .env
    # fill in .env: CHIRON_SRC, CHIRON_PROJECT_DIR, CHIRON_MCP_METADATA_DB, CHIRON_MCP_WAREHOUSE_URL, PUBLIC_URL
@@ -105,7 +105,7 @@ The rest of this page explains each step.
 ## Install
 
 ```bash
-git clone https://github.com/ri-ds/chiron-mcp.git
+git clone https://github.com/TojiFushiguro/chiron-mcp.git
 cd chiron-mcp/askpatch
 cp env.example .env && chmod 600 .env        # then fill it in: paths, databases, address
 docker compose up -d --build                 # builds the image from your Chiron, starts Ask
@@ -274,7 +274,7 @@ WAREHOUSE_URL   = postgresql://user:pass@host.docker.internal:5432/chiron
 MODEL           = api key | bedrock | own model server | claude account (a trial)
 
 Add the Ask tab to this Chiron with chiron-mcp's askpatch, without changing Chiron.
-Repo: https://github.com/ri-ds/chiron-mcp, clone to ~/chiron-mcp (git pull if there).
+Repo: https://github.com/TojiFushiguro/chiron-mcp, clone to ~/chiron-mcp (git pull if there).
 Read askpatch/README.md first.
 
 Limits: touch only ~/chiron-mcp/askpatch, the chiron-askpatch container, the one web
