@@ -129,6 +129,12 @@ What the Ask tab does:
   gets the link, sees everyone, and gives and takes access on each dataset there. Fed by a
   ledger with one row per answer and no question text,
   kept for good. See [The usage page](#the-usage-page).
+- **A question library**: "Save question" under an answer keeps it in the person's own
+  list (the **Questions** button at the left of the question box), to ask again. A
+  superuser picks **Team questions** for a dataset, which everyone on it sees first on the
+  new chat page, and checks from the Admin page that Ask still gives each one's expected
+  answer. Only the words are kept, never an answer. See
+  [The question library](#the-question-library).
 
 Questions take roughly 10 to 40 seconds, because the model makes several Chiron tool
 calls. Each one shows as a chip while it works.
@@ -185,6 +191,7 @@ at your own Chiron. See [Configuration](#configuration).
 - [Known limits](#known-limits)
 - [The call log](#the-call-log)
 - [The usage page](#the-usage-page)
+- [The question library](#the-question-library)
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
 
@@ -579,6 +586,7 @@ The Ask server (`python -m chiron_mcp.webapp`) adds:
 | `CHIRON_MCP_USAGE_DB` | `<state dir>/usage.sqlite` | The usage ledger, one row per answer, behind [the usage page](#the-usage-page): a file path, or `off` |
 | `CHIRON_MCP_USAGE_RETENTION_DAYS` | *(kept)* | Ledger rows older than this many days are deleted when the server starts |
 | `CHIRON_MCP_USAGE_GROUP` | *(none)* | A Django group whose members see everyone's usage and who has what access, as superusers do |
+| `CHIRON_MCP_QUESTIONS_DB` | `<state dir>/questions.sqlite` | The question library (saved and team questions, see [The question library](#the-question-library)): a file path, or `off` to hide it |
 | `CHIRON_MCP_THINKING_DISPLAY` | `summarized` | Passed to Claude Code as `--thinking-display`, so traces show the model's reasoning. Empty leaves the flag off. Code that imports `ask_stream` rather than running the server leaves it off unless set |
 
 See `.env.example`. A superuser is refused in analyst mode; point it at a dedicated service user.
@@ -1160,6 +1168,52 @@ other if their access changes later.
 the same read-only view, with a print stylesheet) and prints it once the charts are drawn;
 the browser's print dialog saves it as a PDF.
 
+## The question library
+
+People save questions that worked, and a dataset's admins pick the ones everyone should
+start from. The Ask server keeps only words, in its own file (`questions.sqlite` in the
+state directory, `CHIRON_MCP_QUESTIONS_DB`), never in Chiron: a question's text and name,
+its dataset, who saved it and when, and how often it was asked from the library. Never an
+answer, a result or anything about a patient.
+
+**Saved questions.** "Save question" under an answer (beside Trace and Report a problem)
+keeps it, with a name if wanted, in the person's own list: the **Questions** button at the
+left of the question box opens it (Team and Mine tabs, a search box), and a click puts the
+question in the box to change or send. A follow-up ("of these, how many are women?") is
+flagged: a saved question is asked on its own, so it should be written out in full. Each
+person sees only their own; they can edit, delete, or **suggest** one for the team.
+
+**Team questions.** A superuser adds them on the Admin page's **Team questions** tab
+(typed in, or from a suggestion), or from Save question under one of their own answers.
+Everyone who may open the dataset sees them, at any level: pinned ones (up to four) first
+on the new chat page, all of them in the Questions list. Asking one is an ordinary
+question at the person's own access level, so an aggregate-only account still gets small
+counts masked. Words that look like they point at one person (a long ID number, a date,
+"MRN", a name after "patient") need a second press before they reach everyone.
+
+**Expected answers and checks.** A team question made from an answer keeps that answer's
+main number (its first bold figure, as the Query button reads it) and the access level it
+was given at, as its expected answer; only superusers ever see it. **Check** (one) or
+**Check all now** (the dataset's active ones, with the cost estimated first from the
+average answer lately) asks again in the background, one at a time, as the superuser who
+pressed it, and compares: matched, answered (no single number expected, such as a chart),
+changed (was 686, now 702: the data was reloaded, so **Keep** the new number, or the
+answer went wrong, so **Open answer** reads it with its trace), the first answer of a
+question typed in (keep its number, or not), or did not answer. People see a "Checked"
+mark only while the last check matched, and "an admin is looking at this answer" when it
+did not. A check's conversation is never listed among the superuser's own, other
+superusers may read it, the next check deletes it, and the usage ledger marks its row as
+a check. Checks a stopped server left waiting are marked as not answered when it starts.
+
+Calls, all same-site and for a signed-in person: `GET /questions?dataset=` (the page's
+lists), `GET /questions/admin.json?dataset=` and `GET /questions/expected?trace=`
+(superusers), and `POST /questions/<action>` with `save`, `edit`, `delete`, `suggest` (one's
+own) and `team`, `status`, `check`, `keep` (superusers). Another person's saved question is
+"no such question" to everyone, admins included. `GET /ask` takes `from=<question id>` to
+count a question asked from the library. Tests: `tests/library.py` and
+`tests/library_checks.py` offline, `tests/library_http.py` against a server (`--model` also
+asks and checks one).
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -1188,6 +1242,7 @@ chiron_mcp/
   trace.py            the trace under each answer, and the hooks that feed the call log and the ledger
   calllog.py          the call log: one line per model call and per Chiron call
   usage.py            the usage ledger: one row per answer, kept for good, summarised for /usage
+  library.py          the question library: saved and team questions, suggestions, checks
   header_login.py     sign-on by request header, for a Chiron behind a gateway (deploy bundle)
   chiron_patches.py   the two Chiron fixes, applied at run time when the host lacks them
   webui/index.html    the chat page (markdown, tables, charts, buttons)

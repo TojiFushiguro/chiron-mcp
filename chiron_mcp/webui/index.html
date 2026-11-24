@@ -348,6 +348,80 @@
   .model:hover { color: var(--ink); }
   .model:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
 
+  /* the question library: the Questions button at the left of the box (the model picker
+     keeps its place by the send button), the list it opens, the new chat page's groups,
+     and Save question under an answer */
+  .composer-wrap { position: relative; }
+  .composer.has-lib { padding-left: 8px; }
+  .lib-btn {
+    flex: none; align-self: center; display: inline-flex; align-items: center; gap: 6px;
+    font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .lib-btn:hover, .lib-btn[aria-expanded="true"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
+  .lib-btn:disabled { opacity: .5; cursor: default; }
+  .lib-pop {
+    position: absolute; left: max(24px, calc(50% - 376px)); bottom: calc(100% - 4px); z-index: 20;
+    width: min(500px, calc(100% - 48px)); max-height: min(460px, 62vh); display: flex; flex-direction: column;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 10px 34px rgba(16, 24, 32, .18); overflow: hidden;
+  }
+  .lib-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line-2); }
+  .lib-find {
+    flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 10px;
+    border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink);
+  }
+  .lib-tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; flex: none; }
+  .lib-tabs button { border: 0; background: none; padding: 5px 10px; font: inherit; font-size: 12.5px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+  .lib-tabs button + button { border-left: 1px solid var(--line); }
+  .lib-tabs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 500; }
+  .lib-list { overflow-y: auto; flex: 1; min-height: 0; }
+  .lib-item { border-bottom: 1px solid var(--line-2); }
+  .lib-item:last-child { border-bottom: 0; }
+  .lib-item > button.pick {
+    display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
+    padding: 9px 14px; font: inherit; color: var(--ink);
+  }
+  .lib-item > button.pick:hover, .lib-item > button.pick:focus-visible { background: var(--accent-soft); outline: 0; }
+  .lib-item .nm { display: block; font-size: 13.5px; font-weight: 500; }
+  .lib-item .tx { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+  .lib-item .mt { display: block; font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+  .lib-item .mt .ok { color: var(--pass); }
+  .lib-item .mt.review { color: var(--warn); }
+  .lib-acts, .lib-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 14px 9px; }
+  .lib-confirm span { font-size: 12.5px; color: var(--danger); }
+  .lib-edit { display: flex; flex-direction: column; gap: 6px; padding: 9px 14px; background: var(--panel); border-bottom: 1px solid var(--line-2); }
+  .lib-edit input, .lib-edit textarea, .save-form input[type=text], .save-form textarea {
+    font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+    background: var(--bg); color: var(--ink); resize: vertical; width: 100%;
+  }
+  .lib-edit .row { display: flex; gap: 6px; align-items: center; }
+  .lib-msg { font-size: 12px; color: var(--danger); }
+  .lib-empty { padding: 16px 14px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .lib-foot { padding: 8px 14px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line-2); }
+  .lib-foot.err { color: var(--danger); }
+  .lib-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+    text-align: left; margin: 18px 0 8px;
+  }
+  .caps + .lib-label { margin-top: 0; }
+  .card small.ok { color: var(--pass); }
+  .save-form label.field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; cursor: default; }
+  .save-form label.field small { color: var(--muted); font-size: 11.5px; }
+  .save-form .admin-box {
+    border: 1px solid var(--accent-line); background: var(--bg); border-radius: 9px; padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .save-form .admin-box .who-tag { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-strong); }
+  .save-form .admin-box label { align-items: flex-start; }
+  .save-form .admin-box input[type=checkbox] { margin: 3px 0 0; accent-color: var(--accent); }
+  .save-form .exp { font-size: 12.5px; color: var(--ink-2); padding-left: 21px; }
+  .warnbox {
+    background: var(--warn-bg); border: 1px solid #f0dc9c; color: var(--warn); border-radius: 9px;
+    padding: 8px 11px; font-size: 12.5px; line-height: 1.45;
+  }
+
   .scrim { display: none; }
 
   /* ---------------------------------------------------------------- trace */
@@ -601,7 +675,13 @@
   </button>
 
   <div class="composer-wrap">
+    <div class="lib-pop" id="lib-pop" role="dialog" aria-label="Saved and team questions" hidden></div>
     <form class="composer" id="composer">
+      <button class="lib-btn" id="lib-btn" type="button" hidden aria-haspopup="dialog" aria-expanded="false"
+              title="Your saved questions and the team questions for this dataset">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        <span>Questions</span>
+      </button>
       <textarea id="q" rows="1" placeholder="Ask about this dataset…" aria-label="Your question"></textarea>
       <select id="model" class="model" aria-label="The model that answers" title="The model that answers" hidden></select>
       <button class="send" id="send" type="submit" aria-label="Send" disabled>
@@ -1218,9 +1298,15 @@ function hero() {
   const caps = el('div', 'caps');
   ['Counts', 'Follow-ups', 'Breakdowns', 'Charts', 'Results', 'Reports'].forEach(c => caps.appendChild(el('span', 'cap', c)));
   h.appendChild(caps);
-  if (STARTERS.length) {
+  const team = LIB ? (LIB.team || []).filter(q => q.pinned).slice(0, 4) : [];
+  const mine = LIB ? (LIB.mine || []).slice(0, 4) : [];
+  if (team.length) h.appendChild(libGroup('Team questions', team));
+  if (mine.length) h.appendChild(libGroup('My questions', mine));
+  const starters = team.length || mine.length ? STARTERS.slice(0, 2) : STARTERS;
+  if (starters.length) {
+    if (team.length || mine.length) h.appendChild(el('div', 'lib-label', 'Try'));
     const cards = el('div', 'cards');
-    STARTERS.forEach(s => {
+    starters.forEach(s => {
       const b = el('button', 'card'); b.type = 'button';
       b.appendChild(el('small', null, FEATURES[s.feature] || 'Try'));
       b.appendChild(document.createTextNode(s.q));
@@ -1373,6 +1459,7 @@ function updateComposer() {
   const theirs = !!(cur && cur.busy && cur.busy.user !== ME);
   qBox.disabled = readonly || theirs;
   if (readonly || theirs) sendBtn.disabled = true;
+  $('lib-btn').disabled = qBox.disabled;
   qBox.placeholder = readonly ? 'Shared with you, read-only. Clone it to continue on your own, or start a new chat.'
     : theirs ? ((cur.busy.name || 'A colleague') + ' is being answered in this conversation; wait for that answer…')
     : !busy ? (cur ? (cur.expired ? 'This conversation expired: a new question starts a new one…'
@@ -1392,7 +1479,7 @@ $('composer').addEventListener('submit', e => {
   if (busy && busy.chatId === activeId && busy.stop) busy.stop(); else ask();
 });
 
-function ask(text) {
+function ask(text, opts) {
   const q = (text !== undefined ? text : qBox.value).trim();
   if (!q || busy) return;
   if (activeChat() && !canWrite(activeChat())) return;
@@ -1407,6 +1494,11 @@ function ask(text) {
     threadEl.textContent = '';
     $('chat-title').textContent = chat.title;
   }
+  // Asked from the library (a card, or a question put in the box from the list and
+  // sent as it is): the server counts it for that question.
+  const from = (opts && opts.from) || (LIB_PICK && LIB_PICK.text.trim() === q ? LIB_PICK.id : null);
+  LIB_PICK = null;
+  if (from) bumpLibraryUse(from);
   const turn = { id: uid(), q, answer: '', cohort: null, link: null, error: '', steps: [], pending: true, at: Date.now() };
   chat.turns.push(turn);
   if (chat.turns.length > MAX_TURNS) chat.turns.shift();
@@ -1423,7 +1515,8 @@ function ask(text) {
   const src = new EventSource(
     'ask?q=' + encodeURIComponent(q) + '&dataset=' + encodeURIComponent(DATASET) +
     (chat.thread ? '&thread=' + encodeURIComponent(chat.thread) : '') +
-    (MODEL ? '&model=' + encodeURIComponent(MODEL) : ''));
+    (MODEL ? '&model=' + encodeURIComponent(MODEL) : '') +
+    (from ? '&from=' + encodeURIComponent(from) : ''));
   const parse = e => { try { return JSON.parse(e.data); } catch (_) { return null; } };
 
   // The server's id for this conversation, sent back with each follow-up so "how many
@@ -1731,6 +1824,329 @@ const KINDS = {
 };
 const LEVELS = [['summary', 'Summary'], ['detailed', 'Detailed'], ['debug', 'Debug']];
 const CHECK_ICON = { fail: '✕', warn: '!', info: 'i', pass: '✓' };
+// --- the question library ----------------------------------------------------------------
+// Questions a person saved, and the team questions an admin picked for this dataset. The
+// Ask server keeps only the words (chiron_mcp/library.py); asking one is an ordinary
+// question, at the person's own access level. A server without the library (older, or
+// with it turned off) answers 404 or {on: false}, and nothing of it shows.
+let LIB = null;        // { on, admin, level, mine: [...], team: [...] } on this dataset
+let LIB_PICK = null;   // { id, text }: the library question last put in the box
+let LIB_TAB = null, LIB_FIND = '';
+const BOOKMARK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+
+async function loadLibrary() {
+  let d = null;
+  try { d = await fetch('questions?dataset=' + encodeURIComponent(DATASET), { cache: 'no-store' }).then(r => r.ok ? r.json() : null); }
+  catch (_) { d = null; }
+  setLibrary(d && d.on && !d.error ? d : null);
+}
+function setLibrary(d) {
+  LIB = d;
+  const on = !!(LIB && ME && DATASET);
+  $('lib-btn').hidden = !on;
+  $('composer').classList.toggle('has-lib', on);
+  if (!on) closeLibrary();
+  else if (!$('lib-pop').hidden) renderLibrary();
+  if (!activeChat()) renderThread();   // the new chat page lists them
+  else repaintAllTraces();             // Save question under each answer
+}
+async function libPost(action, body) {
+  let r = null;
+  try {
+    r = await fetch('questions/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(body) }).then(x => x.json());
+  } catch (_) { r = { error: 'The Ask server could not be reached.' }; }
+  if (r && r.on) setLibrary(r);   // every change answers with the fresh lists
+  return r || { error: 'No answer from the Ask server.' };
+}
+function bumpLibraryUse(id) {
+  const q = LIB && (LIB.mine || []).find(x => x.id === id);
+  if (q) q.uses = (q.uses || 0) + 1;
+}
+function shortDate(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+// The new chat page: a group of cards that ask right away, like the starter questions.
+function libGroup(title, items) {
+  const box = el('div', 'lib-group');
+  box.appendChild(el('div', 'lib-label', title));
+  const cards = el('div', 'cards');
+  items.forEach(q => {
+    const b = el('button', 'card'); b.type = 'button';
+    const tag = el('small');
+    if (q.kind === 'team') {
+      if (q.checked) { tag.className = 'ok'; tag.textContent = '✓ Checked ' + shortDate(q.checked); }
+      else tag.textContent = 'Team';
+      b.title = (q.name ? q.name + '. ' : '') + (q.checked ? 'Ask gave the expected answer when an admin last checked it.'
+               : q.review ? 'An admin is looking at this answer.' : 'Picked by an admin for this dataset.');
+    } else {
+      tag.textContent = 'Mine' + (q.uses ? ' · asked ' + plural(q.uses, 'time', 'times') : '');
+      if (q.name) b.title = q.name;
+    }
+    b.appendChild(tag);
+    b.appendChild(document.createTextNode(q.text));
+    b.onclick = () => ask(q.text, { from: q.id });
+    cards.appendChild(b);
+  });
+  box.appendChild(cards);
+  return box;
+}
+
+// The Questions list, above the box.
+function openLibrary() {
+  if (!LIB) return;
+  LIB_TAB = LIB_TAB || ((LIB.team || []).length ? 'team' : 'mine');
+  $('lib-pop').hidden = false;
+  $('lib-btn').setAttribute('aria-expanded', 'true');
+  renderLibrary();
+  const f = $('lib-pop').querySelector('.lib-find'); if (f) f.focus();
+}
+function closeLibrary() {
+  const pop = $('lib-pop');
+  if (pop.hidden) return;
+  pop.hidden = true; pop.textContent = '';
+  $('lib-btn').setAttribute('aria-expanded', 'false');
+}
+$('lib-btn').onclick = () => { if ($('lib-pop').hidden) openLibrary(); else closeLibrary(); };
+document.addEventListener('mousedown', e => {
+  const pop = $('lib-pop');
+  if (!pop.hidden && !pop.contains(e.target) && !$('lib-btn').contains(e.target)) closeLibrary();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('lib-pop').hidden) { closeLibrary(); $('lib-btn').focus(); }
+});
+function renderLibrary() {
+  const pop = $('lib-pop');
+  if (pop.hidden || !LIB) return;
+  let head = pop.querySelector('.lib-head');
+  if (!head) {   // drawn once per opening, so the search box keeps its focus and words
+    head = el('div', 'lib-head');
+    const find = el('input', 'lib-find'); find.type = 'search';
+    find.placeholder = 'Find a question'; find.setAttribute('aria-label', 'Find a question');
+    find.value = LIB_FIND;
+    find.oninput = () => { LIB_FIND = find.value; renderLibraryList(); };
+    const tabs = el('div', 'lib-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Which questions');
+    head.append(find, tabs);
+    pop.append(head, el('div', 'lib-list'), el('div', 'lib-foot', 'Click a question to put it in the box. Change it if you like, then press Enter.'));
+  }
+  const tabs = head.querySelector('.lib-tabs');
+  tabs.textContent = '';
+  [['team', 'Team', LIB.team], ['mine', 'Mine', LIB.mine]].forEach(([k, label, items]) => {
+    const b = el('button', null, label + ' · ' + (items || []).length); b.type = 'button';
+    b.setAttribute('aria-pressed', String(LIB_TAB === k));
+    b.onclick = () => { LIB_TAB = k; renderLibrary(); };
+    tabs.appendChild(b);
+  });
+  renderLibraryList();
+}
+function libNote(text, isError) {
+  const foot = $('lib-pop').querySelector('.lib-foot');
+  if (!foot) return;
+  foot.textContent = text;
+  foot.classList.toggle('err', !!isError);
+}
+function renderLibraryList() {
+  const list = $('lib-pop').querySelector('.lib-list');
+  if (!list || !LIB) return;
+  list.textContent = '';
+  const words = LIB_FIND.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const all = (LIB_TAB === 'team' ? LIB.team : LIB.mine) || [];
+  const items = all.filter(q => words.every(w => ((q.name || '') + ' ' + q.text).toLowerCase().includes(w)));
+  if (!items.length) {
+    list.appendChild(el('div', 'lib-empty', all.length ? 'No question matches.'
+      : LIB_TAB === 'team' ? 'No team questions for this dataset yet. ' + (LIB.admin
+          ? 'Add them on the Admin page, or with Save question under an answer.' : 'The Ask admins add them.')
+      : 'Nothing saved yet. Use Save question under an answer to keep a question here.'));
+    return;
+  }
+  items.forEach(q => list.appendChild(libItem(q)));
+}
+function libItem(q) {
+  const item = el('div', 'lib-item');
+  const pick = el('button', 'pick'); pick.type = 'button';
+  if (q.name) pick.appendChild(el('span', 'nm', q.name));
+  pick.appendChild(el('span', 'tx', q.text));
+  const meta = libMeta(q);
+  if (meta) pick.appendChild(meta);
+  pick.onclick = () => pickQuestion(q);
+  item.appendChild(pick);
+  if (q.kind === 'mine') item.appendChild(libActions(item, q));
+  return item;
+}
+function libMeta(q) {
+  const m = el('span', 'mt'), bits = [];
+  if (q.kind === 'team') {
+    if (q.checked) m.appendChild(el('span', 'ok', '✓ Checked ' + shortDate(q.checked)));
+    else if (q.review) { m.classList.add('review'); m.textContent = 'An admin is looking at this answer'; }
+    else if (q.no_number) m.textContent = 'A list or a chart, so no single number to check';
+    if (q.pinned) bits.push('pinned');
+  } else {
+    bits.push(q.uses ? 'asked ' + plural(q.uses, 'time', 'times') : 'saved ' + shortDate(q.created));
+    if (q.suggested) bits.push('suggested for the team');
+  }
+  if (bits.length) m.appendChild(document.createTextNode((m.textContent ? ' · ' : '') + bits.join(' · ')));
+  return m.textContent ? m : null;
+}
+function pickQuestion(q) {
+  if (qBox.disabled) return;
+  qBox.value = q.text;
+  LIB_PICK = { id: q.id, text: q.text };
+  closeLibrary(); autosize(); updateComposer();
+  qBox.focus();
+  try { qBox.setSelectionRange(qBox.value.length, qBox.value.length); } catch (_) {}
+}
+function libActions(item, q) {
+  const row = el('div', 'lib-acts');
+  const add = (label, title, fn) => {
+    const b = el('button', 'mini-btn', label); b.type = 'button'; b.title = title;
+    b.onclick = e => { e.stopPropagation(); fn(b); };
+    row.appendChild(b);
+  };
+  add('Edit', 'Change its name or its words', () => item.replaceWith(libEditor(q)));
+  add('Delete', 'Remove it from your questions', () => {
+    const c = el('div', 'lib-confirm');
+    c.appendChild(el('span', null, 'Delete this saved question?'));
+    const yes = el('button', 'mini-btn', 'Delete'); yes.type = 'button';
+    const no = el('button', 'mini-btn', 'Keep it'); no.type = 'button';
+    yes.onclick = async () => { yes.disabled = true; const r = await libPost('delete', { id: q.id }); if (r.error) libNote(r.error, true); };
+    no.onclick = () => renderLibraryList();
+    c.append(yes, no);
+    row.replaceWith(c);
+  });
+  if (!q.suggested) add('Suggest for the team', 'Offer it to the Ask admins for the Team questions', async b => {
+    b.disabled = true;
+    const r = await libPost('suggest', { id: q.id });
+    libNote(r.error || 'Suggested. The Ask admins will see it on their Admin page.', !!r.error);
+  });
+  return row;
+}
+function libEditor(q) {
+  const form = el('form', 'lib-edit');
+  const name = el('input'); name.type = 'text'; name.placeholder = 'Name (optional)'; name.maxLength = 120;
+  name.value = q.name || ''; name.setAttribute('aria-label', 'Name');
+  const text = el('textarea'); text.rows = 2; text.maxLength = 1000; text.value = q.text; text.setAttribute('aria-label', 'Question');
+  const row = el('div', 'row');
+  const ok = el('button', 'mini-btn', 'Save'); ok.type = 'submit';
+  const no = el('button', 'mini-btn', 'Cancel'); no.type = 'button';
+  const msg = el('span', 'lib-msg', '');
+  no.onclick = () => renderLibraryList();
+  row.append(ok, no, msg);
+  form.append(name, text, row);
+  form.onsubmit = async e => {
+    e.preventDefault();
+    ok.disabled = true;
+    const r = await libPost('edit', { id: q.id, name: name.value, text: text.value });
+    if (r.error) { ok.disabled = false; msg.textContent = r.error; }
+  };
+  setTimeout(() => text.focus(), 0);
+  return form;
+}
+
+// "Save question" under an answer (beside Trace and Report a problem). An admin may also
+// make it a team question, with this answer's main number as the expected answer.
+function saveRow(turn) {
+  if (turn.savedQ) { const n = el('span', 'feedback', turn.savedQ); n.dataset.save = '1'; return n; }
+  const b = el('button', 'trace-bar'); b.type = 'button'; b.dataset.save = '1';
+  b.title = 'Keep this question in your Questions list, to ask it again';
+  b.innerHTML = BOOKMARK_ICON;
+  b.appendChild(el('span', null, 'Save question'));
+  b.onclick = () => b.replaceWith(saveForm(turn));
+  return b;
+}
+function field(label, input) {
+  const l = el('label', 'field');
+  l.append(el('small', null, label), input);
+  return l;
+}
+function tick(text) {
+  const wrap = el('label'), input = document.createElement('input');
+  input.type = 'checkbox';
+  wrap.append(input, el('span', null, text));
+  return { wrap, input };
+}
+function saveForm(turn) {
+  const form = el('form', 'flag-form save-form'); form.dataset.save = '1';
+  form.appendChild(el('b', null, 'Save this question'));
+  const chat = activeChat();
+  if (chat && chat.turns.indexOf(turn) > 0) {
+    form.appendChild(el('div', 'warnbox', 'This was a follow-up, so it may lean on the questions before it '
+      + '("them", "of these"). A saved question is asked on its own, so write it out in full.'));
+  }
+  const name = el('input'); name.type = 'text'; name.placeholder = 'A short name, if you like'; name.maxLength = 120;
+  const text = el('textarea'); text.rows = 2; text.maxLength = 1000; text.value = turn.q;
+  form.append(field('Name (optional)', name), field('Question', text));
+  let team = null, pin = null;
+  if (LIB && LIB.admin) {
+    const box = el('div', 'admin-box');
+    box.appendChild(el('span', 'who-tag', 'Admins only'));
+    team = tick('Also add it to Team questions for ' + DATASET_NAME);
+    const exp = el('div', 'exp');
+    pin = tick('Pin it to the new chat page');
+    exp.hidden = pin.wrap.hidden = true;
+    team.input.onchange = () => { exp.hidden = pin.wrap.hidden = !team.input.checked; };
+    box.append(team.wrap, exp, pin.wrap);
+    form.appendChild(box);
+    loadExpected(turn, exp);
+  }
+  const row = el('div', 'row');
+  const ok = el('button', 'mini-btn', 'Save'); ok.type = 'submit';
+  const cancel = el('button', 'mini-btn', 'Cancel'); cancel.type = 'button';
+  const msg = el('span', null, '');
+  row.append(ok, cancel, msg);
+  form.appendChild(row);
+  cancel.onclick = () => form.replaceWith(saveRow(turn));
+  // Words that may point at one person (an ID, a date, a name) need a second press
+  // before everyone on the dataset sees them as a team question.
+  let confirmed = false, why = null;
+  const unconfirm = () => { if (confirmed) { confirmed = false; ok.textContent = 'Save'; } if (why) { why.remove(); why = null; } };
+  name.oninput = text.oninput = unconfirm;
+  if (team) team.input.addEventListener('change', unconfirm);
+  form.onsubmit = async e => {
+    e.preventDefault();
+    ok.disabled = true; msg.textContent = 'Saving…';
+    const r = await libPost('save', { dataset: DATASET, text: text.value, name: name.value,
+                                      team: !!(team && team.input.checked), pinned: !!(pin && pin.input.checked),
+                                      trace: turn.trace && turn.trace.id, confirm: confirmed });
+    ok.disabled = false; msg.textContent = '';
+    if (r.ok === false && r.confirm) {
+      confirmed = true; ok.textContent = 'Add anyway';
+      if (why) why.remove();
+      why = el('div', 'warnbox', 'Everyone who can open this dataset will see this team question, and it has '
+        + r.confirm.join(', ') + '. Make sure it does not point at one person.');
+      form.insertBefore(why, row);
+      return;
+    }
+    if (r.ok) {
+      turn.savedQ = 'Saved to your questions' + (r.team_id ? ' and to Team questions' : '') + '.';
+      save();
+      form.replaceWith(saveRow(turn));
+    } else msg.textContent = r.error || 'Could not save.';
+  };
+  setTimeout(() => text.focus(), 0);
+  return form;
+}
+async function loadExpected(turn, node) {
+  const id = turn.trace && turn.trace.id;
+  let d = null;
+  if (id) {
+    try { d = await fetch('questions/expected?trace=' + encodeURIComponent(id), { cache: 'no-store' }).then(r => r.json()); }
+    catch (_) { d = null; }
+  }
+  node.textContent = '';
+  if (d && d.found && d.figure != null) {
+    node.append('Expected answer: ', el('b', null, Number(d.figure).toLocaleString()),
+      ', the main number in this answer' + (d.level ? ' (at ' + (ACCESS[d.level] || d.level) + ')' : '')
+      + '. Checks compare new answers with it.');
+  } else if (d && d.found) {
+    node.textContent = 'This answer has no single main number, so checks only look for an answer without errors.';
+  } else {
+    node.textContent = 'The record of this answer is gone, so the first check will give the expected answer.';
+  }
+}
+
 const TRACE_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>';
 const CHEV_ICON = '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 const TRACE_UI = {};   // turn id -> { open, sel, keys }: what the reader has opened
@@ -1886,6 +2302,7 @@ function renderTraceSlot(slot, turn) {
   // "Report a problem" (button, open form or thank-you note) sits beside the trace
   // button and is kept as it is across repaints of the trace.
   let report = slot.querySelector(':scope > [data-report]');
+  let saveEl = slot.querySelector(':scope > [data-save]');
   slot.textContent = '';
   const live = LIVE[turn.id], chat = activeChat();
   const traced = !!(turn.trace || live);   // else answered before traces existed, or tracing is off
@@ -1897,6 +2314,9 @@ function renderTraceSlot(slot, turn) {
   }
   if (!report && turn.trace && turn.trace.id && !(live && !live.tail) && chat && !chat.readonly && !chat.view) report = flagRow(turn);
   if (report) slot.appendChild(report);
+  if (!saveEl && LIB && turn.answer && !turn.pending && !turn.copied && !(live && !live.tail)
+      && chat && !chat.readonly && !chat.view) saveEl = saveRow(turn);
+  if (saveEl) slot.appendChild(saveEl);
   if (traced && ui.open) slot.appendChild(tracePanel(turn, ui));
   if (!atBottom() && scroller.scrollTop !== keep) {
     scroller.style.scrollBehavior = 'auto';
@@ -2542,6 +2962,7 @@ function start(d) {
   WHO = (d && d.user) || null;
   SHARE_RULE = (d && d.share_rule) || SHARE_RULE;
   if (VIEW_THREAD) { enterView(); return; }
+  loadLibrary();
   load();
   pickStarters();
   renderSidebar();

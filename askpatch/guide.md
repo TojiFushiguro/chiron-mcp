@@ -100,8 +100,10 @@ need the web server part: see [Chiron on your own computer](#chiron-on-your-own-
 - A **Query** button that opens the answer's patients in Chiron's query builder.
 - **Saved conversations** they can share, copy, export as PDF, or report if an answer
   looks wrong.
-- An **Admin page** for admins: usage and cost per person, who has what access, and the
-  answers people reported.
+- A **question library**: anyone saves a question to ask again, and admins pick
+  **Team questions** for each dataset, checked to still give the expected answer.
+- An **Admin page** for admins: usage and cost per person, who has what access, the
+  answers people reported, and the team questions.
 
 People only ever see what their own Chiron account allows.
 
@@ -434,6 +436,9 @@ computer).
 - **Everyone else** sees only their own usage.
 - Optional: members of the group named in `CHIRON_MCP_USAGE_GROUP` can see everyone's
   usage, but can't change anything.
+- **Superusers** also get the **Team questions** tab: add questions everyone on a dataset
+  starts from, pin up to four to the new chat page, and press **Check** to ask them again
+  and see whether the main number still matches. People never see the expected numbers.
 
 Changes made here are saved in Chiron itself.
 

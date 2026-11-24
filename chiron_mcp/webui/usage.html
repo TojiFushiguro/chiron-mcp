@@ -175,6 +175,36 @@
   .flag-by small { color: var(--muted); font-size: 11.5px; }
   .flag-note { margin-top: 6px; color: var(--ink); white-space: pre-wrap; font-style: italic; }
   .flag-q { margin-top: 6px; color: var(--ink-2); }
+  /* ---- team questions -------------------------------------------------------------- */
+  .q-select { font-size: 12.5px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--bg); max-width: 260px; }
+  .q-table td { white-space: normal; vertical-align: top; padding-top: 10px; padding-bottom: 10px; }
+  .q-table td.nowrap { white-space: nowrap; }
+  .q-table tr.look td { background: #fffaf0; }
+  .q-table tr.retired td { color: var(--muted); }
+  .q-name { font-weight: 500; color: var(--ink); }
+  .q-text { color: var(--muted); font-size: 12.5px; line-height: 1.4; max-width: 420px; }
+  .q-sub { color: var(--muted); font-size: 12px; }
+  .q-pin { border: 0; background: none; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; color: #c9d0d5; }
+  .q-pin.on { color: var(--accent); }
+  .q-pin:disabled { cursor: default; }
+  .q-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 8px; border-radius: 999px; line-height: 19px; white-space: nowrap; }
+  .q-badge.pass { background: #edf7ee; color: #2e7d32; }
+  .q-badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .q-badge.fail { background: var(--danger-bg); color: var(--danger); }
+  .q-badge.wait { background: var(--panel); color: var(--muted); border: 1px solid var(--line); }
+  .q-acts { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 6px; }
+  .q-acts.end { justify-content: flex-end; margin-top: 0; }
+  .q-form { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+  .q-form label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  .q-form input[type=text], .q-form textarea {
+    font: inherit; font-size: 13.5px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+    background: var(--bg); color: var(--ink); resize: vertical;
+  }
+  .q-form .tick { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
+  .q-form .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .q-sugg { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+  .q-sugg:last-child { border-bottom: 0; }
+  .q-sugg > div:first-child { flex: 1; min-width: 0; }
   .flag-q .lbl { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
   .flag-a { margin-top: 6px; }
   .flag-a summary { cursor: pointer; color: var(--accent-strong); font-size: 12.5px; }
@@ -188,6 +218,7 @@
     <button type="button" role="tab" data-view="usage" aria-selected="true">Usage</button>
     <button type="button" role="tab" data-view="access" aria-selected="false" class="hide" id="tab-access">People</button>
     <button type="button" role="tab" data-view="flags" aria-selected="false" class="hide" id="tab-flags">Reported answers</button>
+    <button type="button" role="tab" data-view="questions" aria-selected="false" class="hide" id="tab-questions">Team questions</button>
   </nav>
   <div class="who" id="who" hidden><b id="who-name"></b></div>
 </header>
@@ -245,6 +276,33 @@
     </section>
   </section>
 
+  <!-- ======================= Team questions ======================= -->
+  <section class="view hide" id="view-questions">
+    <div class="toolbar">
+      <select class="q-select" id="q-dataset" aria-label="Dataset"></select>
+      <div class="seg" id="q-filter" role="group" aria-label="Which questions">
+        <button type="button" data-f="all" aria-pressed="true">All</button>
+        <button type="button" data-f="look" aria-pressed="false">Needs a look</button>
+        <button type="button" data-f="suggested" aria-pressed="false">Suggested</button>
+        <button type="button" data-f="retired" aria-pressed="false">Retired</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="q-add" type="button">+ Add a question</button>
+      <button class="btn primary" id="q-check-all" type="button">Check all now</button>
+    </div>
+    <div class="msg hide" id="q-msg"></div>
+    <section class="card hide" id="q-add-card"></section>
+    <section class="card" id="q-card">
+      <h2>Team questions <span class="sub" id="q-sub"></span></h2>
+      <div class="scroll" id="q-list"></div>
+      <p class="note">People with access to this dataset see these questions on Ask's new chat page (pinned ones) and in its Questions list. They never see the expected answers. A check asks a question again, as you, and compares the main number of the new answer with the expected one.</p>
+    </section>
+    <section class="card hide" id="q-sugg-card">
+      <h2>Suggested by people</h2>
+      <div id="q-sugg"></div>
+    </section>
+  </section>
+
   <!-- ======================= People & access ======================= -->
   <section class="view hide" id="view-access">
     <div class="toolbar">
@@ -275,6 +333,7 @@ try {
   FILTER_USER = q.get('user') || null;
   if (q.get('view') === 'access') VIEW = 'access';
   if (q.get('view') === 'flags') VIEW = 'flags';
+  if (q.get('view') === 'questions') VIEW = 'questions';
 } catch (_) {}
 
 // ---- helpers ------------------------------------------------------------------------
@@ -338,6 +397,7 @@ function showView(v) {
   $('view-usage').classList.toggle('hide', v !== 'usage');
   $('view-access').classList.toggle('hide', v !== 'access');
   $('view-flags').classList.toggle('hide', v !== 'flags');
+  $('view-questions').classList.toggle('hide', v !== 'questions');
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -506,7 +566,13 @@ function renderRecent(d) {
     tr.appendChild(ds);
     tr.appendChild(cell(shortModel(r.model)));
     const st = r.status || '–';
-    tr.appendChild(cell(el('span', 'status ' + st, st === 'ok' ? 'ok' : st), ''));
+    const stCell = cell(el('span', 'status ' + st, st === 'ok' ? 'ok' : st), '');
+    if (r.source === 'check') {
+      const tag = el('span', 'badge off', 'check');
+      tag.title = 'A check of a team question, asked by the Ask server for the admin who pressed Check';
+      stCell.appendChild(tag);
+    }
+    tr.appendChild(stCell);
     const calls = cell(num(r.model_calls) + ' + ' + (r.chiron_calls == null ? '–' : num(r.chiron_calls)) + (r.chiron_errors ? ' (' + r.chiron_errors + ' refused)' : ''), 'n');
     calls.title = 'model calls + Chiron calls' + (r.chiron_errors
       ? '. Refused: a Chiron call the tool turned down (an ambiguous or unsupported input) and the model then asked differently; the answer itself was fine'
@@ -715,6 +781,281 @@ function renderChanges() {
 }
 $('search').oninput = () => renderPersons();
 
+// ---- team questions (the question library, chiron_mcp/library.py) ------------------------
+// Superusers pick a dataset's team questions, keep each one's expected answer (the main
+// number of an answer they looked at) and ask them again to check that it still holds.
+let QDATA = null, QDS = null, QFILTER = 'all', QTIMER = null;
+try { QDS = localStorage.getItem('chiron-ask:questions-dataset') || null; } catch (_) {}
+const NEEDS_LOOK = ['changed', 'failed', 'new'];
+
+async function loadQuestions(ds) {
+  if (ds) QDS = ds;
+  let d = null;
+  try { d = await fetch('questions/admin.json' + (QDS ? '?dataset=' + encodeURIComponent(QDS) : ''), { cache: 'no-store' }).then(r => r.ok ? r.json() : null); }
+  catch (_) { d = null; }
+  if (!d || d.error || !d.admin) { QDATA = null; $('tab-questions').classList.add('hide'); return; }
+  renderQuestions(d);
+}
+async function qPost(action, body) {
+  let r = null;
+  try {
+    r = await fetch('questions/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                             body: JSON.stringify(Object.assign({ view: 'admin' }, body)) }).then(x => x.json());
+  } catch (_) { r = { error: 'The Ask server could not be reached.' }; }
+  r = r || { error: 'No answer from the Ask server.' };
+  if (r.admin) renderQuestions(r);
+  return r;
+}
+function qMsg(text, kind) {
+  const box = $('q-msg');
+  box.textContent = '';
+  box.className = 'msg' + (kind ? ' ' + kind : '') + (text ? '' : ' hide');
+  if (text instanceof Node) box.appendChild(text); else if (text) box.textContent = text;
+}
+function qNum(v) { return v === '' || v == null ? v : Number(v).toLocaleString(); }
+function qDay(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+function qBtn(label, onclick, cls, title) {
+  const b = el('button', 'btn small' + (cls ? ' ' + cls : ''), label); b.type = 'button';
+  if (title) b.title = title;
+  b.onclick = () => onclick(b);
+  return b;
+}
+
+function renderQuestions(d) {
+  QDATA = d; QDS = d.dataset;
+  try { if (QDS) localStorage.setItem('chiron-ask:questions-dataset', QDS); } catch (_) {}
+  const tab = $('tab-questions');
+  tab.classList.remove('hide');
+  tab.textContent = 'Team questions' + (d.attention ? ' · ' + d.attention : '');
+  tab.title = d.attention ? d.attention + ' waiting for you: suggestions, and checks that need a look' : '';
+  const sel = $('q-dataset');
+  sel.textContent = '';
+  (d.datasets || []).forEach(x => {
+    const o = el('option', '', x.name + (x.attention ? ' (' + x.attention + ')' : ''));
+    o.value = x.id; sel.appendChild(o);
+  });
+  if (QDS) sel.value = QDS;
+  const team = d.team || [], active = team.filter(q => q.status === 'active');
+  const look = active.filter(q => NEEDS_LOOK.includes(q.check_status));
+  const retired = team.filter(q => q.status !== 'active'), sugg = d.suggestions || [];
+  const counts = { all: active.length, look: look.length, suggested: sugg.length, retired: retired.length };
+  document.querySelectorAll('#q-filter button').forEach(b => {
+    b.textContent = { all: 'All', look: 'Needs a look', suggested: 'Suggested', retired: 'Retired' }[b.dataset.f] + ' · ' + counts[b.dataset.f];
+    b.setAttribute('aria-pressed', String(b.dataset.f === QFILTER));
+  });
+  $('q-check-all').disabled = !active.length;
+  const rows = QFILTER === 'look' ? look : QFILTER === 'retired' ? retired : active;
+  $('q-card').classList.toggle('hide', QFILTER === 'suggested');
+  $('q-sub').textContent = active.length ? active.filter(q => q.pinned).length + ' pinned · ' + active.length + ' active' : '';
+  const list = $('q-list');
+  list.textContent = '';
+  if (!rows.length) {
+    list.appendChild(el('div', 'empty', QFILTER === 'look' ? 'Nothing needs a look.' : QFILTER === 'retired' ? 'No retired questions.'
+      : 'No team questions for this dataset yet. Add one here, or use Save question under an answer in Ask.'));
+  } else {
+    list.appendChild(table([{ label: 'Pin' }, { label: 'Question' }, { label: 'Expected answer' }, { label: 'Last check' }, { label: 'Asked' }, { label: '' }],
+                           rows.map(qRow)));
+    list.querySelector('table').classList.add('q-table');
+  }
+  renderSuggestions(sugg);
+  clearTimeout(QTIMER);
+  if (d.checking) QTIMER = setTimeout(() => loadQuestions(), 4000);
+}
+
+function qRow(q) {
+  const tr = el('tr', NEEDS_LOOK.includes(q.check_status) && q.status === 'active' ? 'look' : q.status !== 'active' ? 'retired' : '');
+  const pin = el('button', 'q-pin' + (q.pinned ? ' on' : ''), '●'); pin.type = 'button';
+  pin.title = q.pinned ? 'Pinned to the new chat page. Click to unpin.' : 'Not pinned. Click to pin it to the new chat page (up to four show).';
+  pin.disabled = q.status !== 'active';
+  pin.onclick = async () => { pin.disabled = true; const r = await qPost('edit', { id: q.id, pinned: !q.pinned }); if (r.error) { qMsg(r.error, 'bad'); pin.disabled = false; } };
+  tr.appendChild(cell(pin));
+  const qc = el('td');
+  if (q.name) qc.appendChild(el('div', 'q-name', q.name));
+  qc.appendChild(el('div', q.name ? 'q-text' : 'q-name', q.text));
+  tr.appendChild(qc);
+  // expected answer
+  const ex = el('td', 'nowrap');
+  if (q.expected == null) ex.appendChild(el('span', 'q-sub', 'set by the first check'));
+  else if (q.expected === '') ex.appendChild(el('span', 'q-sub', 'no single number'));
+  else ex.appendChild(el('b', '', qNum(q.expected)));
+  if (q.expected != null && q.expected_level) ex.appendChild(el('div', 'q-sub', 'at ' + (ACCESS[q.expected_level] || q.expected_level)));
+  if (q.expected_at) ex.title = 'Set ' + when(q.expected_at) + (q.expected_by_name ? ' by ' + q.expected_by_name : '');
+  tr.appendChild(ex);
+  tr.appendChild(qCheckCell(q));
+  const asked = el('td', 'nowrap');
+  asked.appendChild(document.createTextNode(q.uses ? q.uses + (q.uses === 1 ? ' time' : ' times') : 'not yet'));
+  if (q.uses) asked.appendChild(el('div', 'q-sub', q.people + (q.people === 1 ? ' person' : ' people')));
+  tr.appendChild(asked);
+  const acts = el('td', 'nowrap');
+  const box = el('div', 'q-acts end');
+  if (q.status === 'active') {
+    box.appendChild(qBtn('Edit', () => qEdit(tr, q)));
+    const busy = q.check_state === 'queued' || q.check_state === 'running';
+    const ck = qBtn('Check', async b => { b.disabled = true; const r = await qPost('check', { id: q.id }); if (r.error) { qMsg(r.error, 'bad'); b.disabled = false; } },
+                    '', 'Ask it again now, as you' + (QDATA && QDATA.avg_cost ? ' (about ' + money(QDATA.avg_cost) + ')' : ''));
+    ck.disabled = busy;
+    box.appendChild(ck);
+    box.appendChild(qBtn('Retire', async () => { const r = await qPost('status', { id: q.id, status: 'retired' }); if (r.error) qMsg(r.error, 'bad'); },
+                         '', 'Hide it from people; it stays here under Retired'));
+  } else {
+    box.appendChild(qBtn('Restore', async () => { const r = await qPost('status', { id: q.id, status: 'active' }); if (r.error) qMsg(r.error, 'bad'); }));
+    box.appendChild(qBtn('Delete', b => {
+      const c = el('span', 'q-sub', 'Delete for good? ');
+      c.appendChild(qBtn('Delete', async () => { const r = await qPost('delete', { id: q.id }); if (r.error) qMsg(r.error, 'bad'); }, 'danger'));
+      c.appendChild(qBtn('Keep', () => renderQuestions(QDATA)));
+      b.replaceWith(c);
+    }, 'danger'));
+  }
+  acts.appendChild(box);
+  tr.appendChild(acts);
+  return tr;
+}
+
+function qCheckCell(q) {
+  const td = el('td', 'nowrap');
+  if (q.check_state === 'queued' || q.check_state === 'running') {
+    td.appendChild(el('span', 'q-badge wait', q.check_state === 'running' ? 'checking…' : 'waiting to check…'));
+    return td;
+  }
+  const st = q.check_status;
+  const found = q.check_value == null || q.check_value === '' ? 'no single number' : qNum(q.check_value);
+  const badge = (cls, text) => td.appendChild(el('span', 'q-badge ' + cls, text));
+  if (!st) { td.appendChild(el('span', 'q-sub', 'not checked yet')); return td; }
+  if (st === 'matched') badge('pass', '✓ matched');
+  else if (st === 'answered') badge('pass', '✓ answered');
+  else if (st === 'changed') badge('warn', 'was ' + (q.expected === '' ? 'no single number' : qNum(q.expected)) + ', now ' + found);
+  else if (st === 'new') badge('warn', 'first answer: ' + found);
+  else if (st === 'failed') badge('fail', 'did not answer');
+  td.appendChild(el('div', 'q-sub', qDay(q.check_at) + (q.check_by_name ? ' · ' + q.check_by_name : '')));
+  if (q.check_note && st === 'failed') { const n = el('div', 'q-sub', q.check_note); n.style.whiteSpace = 'normal'; n.style.maxWidth = '260px'; td.appendChild(n); }
+  if (NEEDS_LOOK.includes(st)) {
+    const box = el('div', 'q-acts');
+    if (q.check_thread) {
+      const a = el('a', 'btn small', 'Open answer');
+      a.href = './?dataset=' + encodeURIComponent(q.dataset) + '&view=' + encodeURIComponent(q.check_thread);
+      a.target = '_blank'; a.rel = 'noopener'; a.style.textDecoration = 'none';
+      a.title = 'The answer this check got, read-only, in a new tab';
+      box.appendChild(a);
+    }
+    if (st !== 'failed') {
+      box.appendChild(qBtn('Keep ' + found, async () => { const r = await qPost('keep', { id: q.id }); if (r.error) qMsg(r.error, 'bad'); },
+                           '', 'Take this as the expected answer from now on (for example, after the data was reloaded)'));
+    }
+    td.appendChild(box);
+  }
+  return td;
+}
+
+// A form for a team question: new (typed in, or from a suggestion) or one being edited.
+// Words that may point at one person need a second press.
+function qForm(opts) {
+  const form = el('form', 'q-form');
+  if (opts.title) form.appendChild(el('b', '', opts.title));
+  const name = el('input'); name.type = 'text'; name.maxLength = 120; name.placeholder = 'A short name, if you like'; name.value = opts.name || '';
+  const text = el('textarea'); text.rows = 2; text.maxLength = 1000; text.value = opts.text || '';
+  const nl = el('label', 'f'); nl.append('Name (optional)', name);
+  const tl = el('label', 'f'); tl.append('Question', text);
+  form.append(nl, tl);
+  let pin = null;
+  if (opts.pin) {
+    pin = document.createElement('input'); pin.type = 'checkbox';
+    const pl = el('label', 'tick'); pl.append(pin, 'Pin it to the new chat page');
+    form.appendChild(pl);
+  }
+  if (opts.note) form.appendChild(el('div', 'q-sub', opts.note));
+  const row = el('div', 'row');
+  const ok = el('button', 'btn primary', opts.button || 'Save'); ok.type = 'submit';
+  const cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button';
+  const msg = el('span', 'q-sub', '');
+  row.append(ok, cancel, msg);
+  form.appendChild(row);
+  cancel.onclick = opts.cancel;
+  let confirmed = false, why = null;
+  const reset = () => { if (confirmed) { confirmed = false; ok.textContent = opts.button || 'Save'; } if (why) { why.remove(); why = null; } };
+  name.oninput = text.oninput = reset;
+  form.onsubmit = async e => {
+    e.preventDefault();
+    ok.disabled = true; msg.textContent = '';
+    const r = await opts.submit({ name: name.value, text: text.value, pinned: !!(pin && pin.checked), confirm: confirmed });
+    ok.disabled = false;
+    if (r.ok === false && r.confirm) {
+      confirmed = true; ok.textContent = 'Add anyway';
+      if (why) why.remove();
+      why = el('div', 'msg warn', 'Everyone who can open this dataset will see this question, and it has ' + r.confirm.join(', ')
+        + '. Make sure it does not point at one person, then press Add anyway.');
+      form.insertBefore(why, row);
+      return;
+    }
+    if (r.error) msg.textContent = r.error;
+  };
+  setTimeout(() => text.focus(), 0);
+  return form;
+}
+function qOpenAdd(src) {
+  const card = $('q-add-card');
+  card.textContent = '';
+  card.classList.remove('hide');
+  card.appendChild(qForm({
+    title: src ? 'Add a suggested question to Team questions' : 'Add a team question to ' + ((QDATA.datasets || []).find(x => x.id === QDS) || {}).name,
+    name: src ? src.name : '', text: src ? src.text : '', pin: true, button: 'Add',
+    note: 'Its first check gives the expected answer: press Check after adding it.',
+    cancel: () => card.classList.add('hide'),
+    submit: async v => {
+      const r = await qPost('team', Object.assign({ dataset: QDS, from: src ? src.id : undefined }, v));
+      if (r.ok) { card.classList.add('hide'); qMsg(''); }
+      return r;
+    },
+  }));
+}
+function qEdit(tr, q) {
+  const td = el('td'); td.colSpan = 6;
+  td.appendChild(qForm({
+    name: q.name, text: q.text, button: 'Save',
+    note: 'New words clear the checked mark until the next check.',
+    cancel: () => renderQuestions(QDATA),
+    submit: v => qPost('edit', { id: q.id, name: v.name, text: v.text, confirm: v.confirm }),
+  }));
+  const row = el('tr'); row.appendChild(td);
+  tr.replaceWith(row);
+}
+function renderSuggestions(sugg) {
+  const card = $('q-sugg-card'), box = $('q-sugg');
+  card.classList.toggle('hide', !(QFILTER === 'suggested' || (QFILTER === 'all' && sugg.length)));
+  box.textContent = '';
+  if (!sugg.length) { box.appendChild(el('div', 'empty', 'No suggestions waiting.')); return; }
+  sugg.forEach(s => {
+    const row = el('div', 'q-sugg'), main = el('div');
+    main.appendChild(el('div', 'q-sub', (s.owner_name || s.owner) + ' · ' + qDay(s.created)));
+    if (s.name) main.appendChild(el('div', 'q-name', s.name));
+    main.appendChild(el('div', '', s.text));
+    row.appendChild(main);
+    row.appendChild(qBtn('Add to Team questions', () => qOpenAdd(s), 'primary', 'Read it, change it if needed, then add it'));
+    row.appendChild(qBtn('Dismiss', async () => { const r = await qPost('status', { id: s.id, status: 'dismissed' }); if (r.error) qMsg(r.error, 'bad'); }));
+    box.appendChild(row);
+  });
+}
+$('q-dataset').onchange = () => { qMsg(''); $('q-add-card').classList.add('hide'); loadQuestions($('q-dataset').value); };
+document.querySelectorAll('#q-filter button').forEach(b => b.onclick = () => { QFILTER = b.dataset.f; if (QDATA) renderQuestions(QDATA); });
+$('q-add').onclick = () => { if (QDATA) qOpenAdd(null); };
+$('q-check-all').onclick = () => {
+  if (!QDATA) return;
+  const n = (QDATA.team || []).filter(q => q.status === 'active').length;
+  const ds = ((QDATA.datasets || []).find(x => x.id === QDS) || {}).name || QDS;
+  const box = el('span');
+  box.append('Ask the ' + n + ' active team ' + (n === 1 ? 'question' : 'questions') + ' on ' + ds
+    + ' again, one after another, as you. '
+    + (QDATA.avg_cost ? 'About ' + money(QDATA.avg_cost * n) + ' (' + money(QDATA.avg_cost) + ' each, the average answer lately). '
+                      : 'It costs about what ' + n + ' ordinary ' + (n === 1 ? 'question costs' : 'questions cost') + '. '));
+  box.appendChild(qBtn('Check all', async b => {
+    b.disabled = true;
+    const r = await qPost('check', { dataset: QDS, all: true });
+    qMsg(r.error || (r.queued ? r.queued + (r.queued === 1 ? ' check' : ' checks') + ' started. This page updates as they finish; you can leave it.' : 'They are already being checked.'), r.error ? 'bad' : '');
+  }, 'primary'));
+  box.append(' ');
+  box.appendChild(qBtn('Cancel', () => qMsg('')));
+  qMsg(box);
+};
+
 // ---- loading ----------------------------------------------------------------------------
 function renderError(msg) {
   const v = $('view-usage');
@@ -757,7 +1098,8 @@ async function load() {
     } catch (_) { ACCESS_DATA = { error: 'unavailable' }; }
   }
   render(d);
-  if (d && d.everyone) { renderPersons(); renderChanges(); showView(VIEW); }
+  if (d && d.user && d.user.superuser) await loadQuestions();
+  if (d && d.everyone) { renderPersons(); renderChanges(); showView(VIEW === 'questions' && !QDATA ? 'usage' : VIEW); }
   else showView('usage');
 }
 

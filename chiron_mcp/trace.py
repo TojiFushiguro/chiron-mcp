@@ -896,7 +896,8 @@ class Trace:
             calllog.write("answer", **row)
             started = self.data.get("started")
             usage.record(row, started=started,
-                         ended=(started + self.data["ended"] / 1000.0) if started else None)
+                         ended=(started + self.data["ended"] / 1000.0) if started else None,
+                         source=self.data.get("source") or "live")
         self._guard(go)
         with _LIVE_GUARD:
             LIVE.pop(self.id, None)

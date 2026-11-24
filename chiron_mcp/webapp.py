@@ -25,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from chiron_mcp import library
 from chiron_mcp import trace as tracing
 from chiron_mcp import usage
 from chiron_mcp.config import CONFIG
@@ -1636,11 +1637,13 @@ class _Threads:
             return bool(t and int(t.get("turns") or 0) > 0)
 
     def touch(self, tid: str, user: str, dataset: str | None,
-              cohort: dict | None = None, question: str | None = None) -> None:
+              cohort: dict | None = None, question: str | None = None, kind: str | None = None) -> None:
         """Record activity, and the cohort behind the latest Query button if there was one.
 
         The cohort is a filter definition (concept ids and values), not patient data.
         The first question becomes the conversation's title; every answer counts.
+        `kind` "check": the server asked it, to check a team question (see run_check);
+        it is never listed among the person's conversations.
         """
         import time
 
@@ -1656,6 +1659,8 @@ class _Threads:
             for key in ("seed", "cloned_from", "cloned_by"):
                 if prev.get(key):
                     entry[key] = prev[key]
+            if kind or prev.get("kind"):
+                entry["kind"] = kind or prev["kind"]
             self._data[tid] = entry
             self._save()
 
@@ -1665,7 +1670,8 @@ class _Threads:
 
         with self._guard:
             items = [(tid, dict(t)) for tid, t in self._data.items()
-                     if t.get("user") == user and (dataset is None or t.get("dataset") == dataset)]
+                     if t.get("user") == user and (dataset is None or t.get("dataset") == dataset)
+                     and t.get("kind") != "check"]
         out = []
         for tid, t in items:
             if not t.get("title"):
@@ -2207,11 +2213,14 @@ def ask_stream(
     allow_superuser: bool,
     thread: str | None = None,
     model: str | None = None,
+    source: str = "live",
 ):
     """Answer one question as `username`, continuing `thread` when it is theirs.
 
     `model` is the page's pick among CHIRON_MCP_ASK_MODELS (pick_model decides what it
-    means); a follow-up may switch, since the transcript is resumed by id.
+    means); a follow-up may switch, since the transcript is resumed by id. `source`
+    "check": the server is checking a team question (run_check); the usage ledger says
+    so, and the conversation is not listed among the person's own.
 
     Events: thread (the conversation id to send back with a follow-up), step, link,
     cohort (verified, with its subject count), answer, error. With tracing on, also
@@ -2280,6 +2289,7 @@ def ask_stream(
                 prior=tracing.prior(_trace_root(), tid, participants) if resume else [],
                 inherited=THREADS.cohort(tid) if resume else None, redact=_redact,
                 groups=_groups_dict(tid) if resume else None, access_level=level, details=details)
+            trace.data["source"] = source
             yield "trace_start", trace.head()
         for _attempt in range(2):
             if resume:
@@ -2370,7 +2380,8 @@ def ask_stream(
             trace.launched(cmd, note, SYSTEM_PROMPT, True)
             yield from _saving(_claude_turn(cmd, username, allow_superuser, outcome,
                                             THREADS.cohort(tid), tid, trace, env=env), trace)
-        THREADS.touch(tid, username, dataset, outcome.get("cohort"), question=question)
+        THREADS.touch(tid, username, dataset, outcome.get("cohort"), question=question,
+                      kind="check" if source == "check" else None)
         if TRACE:
             trace.finish(outcome.get("rc"), outcome.get("stderr", ""))
             trace.save(_trace_root())
@@ -2424,6 +2435,96 @@ def _thinking_flag_refused(outcome: dict) -> bool:
 
 # The session-cookie lookup lives in identity, shared with the OAuth login page.
 from chiron_mcp.identity import AccessError, session_username  # noqa: E402,F401
+
+
+# -- team-question checks (chiron_mcp/library.py) ------------------------------------------
+
+ONLY_ADMINS = "Only a Chiron superuser can manage team questions."
+
+
+def run_check(qid: str, username: str, allow_superuser: bool) -> None:
+    """Ask a team question again, as the admin who pressed Check, and keep what the main
+    number of the answer says about it (library.compare). It is an ordinary answer: traced,
+    in the usage ledger marked as a check, in a conversation of the admin's that is not
+    listed among their own. The previous check's conversation is deleted."""
+    q = library.get(qid)
+    if not q or q["kind"] != "team" or q["status"] != "active":
+        library.check_cancel(qid)
+        return
+    level = _access_level(q["dataset"], username, allow_superuser)
+    if not level:
+        library.check_result(qid, status="failed", actor=username,
+                             note="You have no access to this dataset, so the check could not ask it.")
+        return
+    library.check_running(qid)
+    answer = error = thread = trace_id = None
+    stream = ask_stream(q["text"], q["dataset"], username, allow_superuser, None, None, source="check")
+    try:
+        for event, payload in stream:
+            if event == "thread":
+                thread = payload
+            elif event == "trace_start":
+                trace_id = (payload or {}).get("id")
+            elif event == "answer":
+                answer = payload
+            elif event == "error":
+                error = payload
+    finally:
+        stream.close()
+    found = headline_figure(answer) if answer else None
+    library.check_result(qid, status=library.compare(q.get("expected"), found, bool(answer)), actor=username,
+                         level=level, value=None if found is None else str(found), trace=trace_id,
+                         thread=thread, note=None if answer else (error or "No answer was given."))
+    _forget_check(q.get("check_thread"), keep=thread)
+
+
+def _forget_check(thread: str | None, keep: str | None = None) -> None:
+    """Delete a check's conversation (never a conversation of the admin's own, such as the
+    one a team question's expected answer came from)."""
+    if not thread or thread == keep:
+        return
+    entry = THREADS.entry(thread)
+    if entry and entry.get("kind") == "check":
+        THREADS.forget(thread, entry.get("user"))
+
+
+class _Checks:
+    """Checks wait in one queue and run one at a time, in the background: each is an
+    ordinary answer, and several at once would compete for the model and the server."""
+
+    def __init__(self):
+        import queue
+
+        self._jobs: "queue.Queue[tuple]" = queue.Queue()
+        self._worker: threading.Thread | None = None
+        self._guard = threading.Lock()
+
+    def submit(self, ids: list[str], username: str, allow_superuser: bool) -> int:
+        n = 0
+        for qid in ids:
+            if library.check_queue(qid):
+                self._jobs.put((qid, username, allow_superuser))
+                n += 1
+        with self._guard:
+            if n and (self._worker is None or not self._worker.is_alive()):
+                self._worker = threading.Thread(target=self._run, name="ask-checks", daemon=True)
+                self._worker.start()
+        return n
+
+    def _run(self) -> None:
+        while True:
+            qid, username, allow_su = self._jobs.get()
+            try:
+                run_check(qid, username, allow_su)
+            except Exception as exc:  # noqa: BLE001
+                print(f"check {qid}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                try:
+                    library.check_result(qid, status="failed", actor=username, note=f"{type(exc).__name__}: {exc}")
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+CHECKS = _Checks()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -2515,6 +2616,14 @@ class Handler(BaseHTTPRequestHandler):
             if not self._same_site():
                 return self.send_error(403, "cross-site request refused")
             return self._threads(parse_qs(url.query))
+        if url.path in ("/questions", "/questions/admin.json", "/questions/expected"):
+            if not self._same_site():
+                return self.send_error(403, "cross-site request refused")
+            if url.path == "/questions":
+                return self._questions(parse_qs(url.query))
+            if url.path == "/questions/expected":
+                return self._questions_expected(parse_qs(url.query))
+            return self._questions_admin(parse_qs(url.query))
 
         self.send_error(404)
 
@@ -2534,6 +2643,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._usage_access_change()
         if url.path == "/usage/flag":
             return self._usage_flag()
+        if url.path.startswith("/questions/"):
+            return self._questions_post(url.path[len("/questions/"):])
         self.send_error(404)
 
     def _body(self) -> dict | None:
@@ -2812,6 +2923,11 @@ class Handler(BaseHTTPRequestHandler):
         if tid:
             role = THREADS.role(tid, who)
             entry = THREADS.entry(tid)
+            if (not role and entry and entry.get("kind") == "check" and library.enabled()
+                    and library.is_check_thread(tid) and self._library_who()[3]):
+                # A team question's check, for any library admin to read (Open answer on
+                # the Admin page); each answer in it is still shown by their own access.
+                role = "reader"
             if not role or not entry:
                 return self._json({"error": "No such conversation of yours."})
             turns, withheld = gated_turns(entry, tid, who)
@@ -2953,6 +3069,247 @@ class Handler(BaseHTTPRequestHandler):
         ok = usage.set_flag(fid, str(body.get("status") or "handled"), who)
         return self._json({"ok": ok, "flags": usage.flags(200)})
 
+    # -- the question library (chiron_mcp/library.py) -------------------------------------------
+
+    def _library_who(self):
+        """(username, superuser allowed, user info, library admin) behind a request. Library
+        admins are Chiron superusers signed in to Chiron: they pick the team questions, see
+        expected answers and run checks."""
+        who, allow_su = request_identity(self.headers.get("Cookie"))
+        if not who:
+            return None, False, None, False
+        try:
+            info = user_info(who, allow_su)
+        except Exception:  # noqa: BLE001
+            info = None
+        return who, allow_su, info, bool(allow_su and info and info.get("superuser"))
+
+    @staticmethod
+    def _levels(info: dict | None) -> dict:
+        return {d["id"]: d["access_level"] for d in ((info or {}).get("datasets") or [])}
+
+    @staticmethod
+    def _library_page(who: str, dataset: str, level: str | None, admin: bool) -> dict:
+        """The library as the Ask page shows it on a dataset: the person's own questions,
+        and the dataset's team questions when they may open it. Never an expected answer."""
+        return {"on": True, "admin": admin, "dataset": dataset, "level": level,
+                "mine": [library.public(q) for q in library.mine(who, dataset)],
+                "team": [library.public(q) for q in library.team(dataset)] if level else []}
+
+    @staticmethod
+    def _library_admin(info: dict, dataset: str | None) -> dict:
+        """The Admin page's Team questions tab: one dataset's team questions with all that
+        is kept about them, its open suggestions, and what waits on each dataset."""
+        names = {d["id"]: d["name"] for d in (info.get("datasets") or [])}
+        need = library.attention()
+        if dataset not in names:
+            dataset = next((d for d in names if need.get(d)), next(iter(names), None))
+        team = [library.admin_view(q) for q in library.team(dataset, retired=True)] if dataset else []
+        for q in team:
+            q["check_by_name"] = display_name(q["check_by"]) if q.get("check_by") else None
+            q["expected_by_name"] = display_name(q["expected_by"]) if q.get("expected_by") else None
+        sugg = []
+        for item in (library.suggestions(dataset) if dataset else []):
+            item = library.admin_view(item)
+            item["owner_name"] = display_name(item["owner"])
+            sugg.append(item)
+        return {"admin": True, "dataset": dataset,
+                "datasets": [{"id": d, "name": n, "attention": need.get(d, 0)} for d, n in names.items()],
+                "team": team, "suggestions": sugg, "attention": sum(need.get(d, 0) for d in names),
+                "avg_cost": usage.average_cost(dataset) if dataset else None,
+                "checking": library.checking()}
+
+    def _questions(self, params):
+        """GET ?dataset=: the library as the Ask page shows it (_library_page)."""
+        if not library.enabled():
+            return self._json({"on": False})
+        who, _allow_su, info, admin = self._library_who()
+        if not who:
+            return self._json({"on": True, "error": NOT_LOGGED_IN})
+        dataset = (params.get("dataset") or [""])[0]
+        if not dataset:
+            return self._json({"on": True, "error": "dataset is required."})
+        try:
+            return self._json(self._library_page(who, dataset, self._levels(info).get(dataset), admin))
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"on": True, "error": f"The question library could not be read: {exc}"})
+
+    def _questions_admin(self, params):
+        """GET ?dataset=: the Admin page's Team questions tab, for library admins."""
+        if not library.enabled():
+            return self._json({"on": False})
+        who, _allow_su, info, admin = self._library_who()
+        if not who:
+            return self._json({"error": NOT_LOGGED_IN})
+        if not admin:
+            return self._json({"error": ONLY_ADMINS})
+        try:
+            return self._json(self._library_admin(info or {}, (params.get("dataset") or [None])[0]))
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"error": f"The question library could not be read: {exc}"})
+
+    def _questions_expected(self, params):
+        """GET ?trace=: the main number of one of the person's own answers, and the access
+        level it was given at, for an admin about to make it a team question's expected
+        answer."""
+        who, _allow_su, _info, admin = self._library_who()
+        if not who:
+            return self._json({"error": NOT_LOGGED_IN})
+        if not admin:
+            return self._json({"error": ONLY_ADMINS})
+        data = tracing.find(_trace_root(), (params.get("trace") or [""])[0], who)
+        if not data or not data.get("answer"):
+            return self._json({"found": False})
+        return self._json({"found": True, "figure": headline_figure(data["answer"]),
+                           "level": data.get("access_level")})
+
+    def _questions_post(self, action: str):
+        """POST /questions/<action>: one change to the library (_library_action)."""
+        if not self._same_site() or not self._origin_ok():
+            return self._json({"error": "Refused: request came from an untrusted origin."})
+        if not library.enabled():
+            return self._json({"error": "The question library is turned off on this Ask server."})
+        body = self._body()
+        if body is None:
+            return self._json({"error": "Body must be JSON."})
+        who, allow_su, info, admin = self._library_who()
+        if not who:
+            return self._json({"error": NOT_LOGGED_IN})
+        try:
+            return self._json(self._library_action(action, body, who, allow_su, info or {}, admin))
+        except ValueError as exc:
+            return self._json({"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            return self._json({"error": f"{type(exc).__name__}: {exc}"})
+
+    def _library_action(self, action: str, body: dict, who: str, allow_su: bool, info: dict,
+                        admin: bool) -> dict:
+        """One change to the library, by `who`:
+
+            save     {dataset, text, name?, team?, pinned?, trace?, confirm?}   anyone; team: admins
+            edit     {id, name?, text?, pinned?, confirm?}  one's own; a team question: admins
+            delete   {id}                                    one's own; team and suggestions: admins
+            suggest  {id}                                    offer one's own to the admins
+            team     {dataset, text, name?, pinned?, from?, confirm?}   admins: add a team question
+            status   {id, status}                            admins: retire, restore, dismiss
+            check    {id} or {dataset, all: true}            admins: ask again, in the background
+            keep     {id}                                    admins: the last check's number is expected
+
+        Adding words to the team that look like they point at one person (an ID number, a
+        date, a name) answers {"ok": false, "confirm": [why]} until sent with confirm. The
+        answer carries the page's lists, or the Admin page's with "view": "admin".
+        """
+        if action not in ("save", "edit", "delete", "suggest", "team", "status", "check", "keep"):
+            raise ValueError("No such action.")
+        if action in ("team", "status", "check", "keep") and not admin:
+            raise ValueError(ONLY_ADMINS)
+        levels = self._levels(info)
+        q = src = None
+        if action in ("edit", "delete", "suggest", "status", "keep") or (action == "check" and body.get("id")):
+            q = library.get(str(body.get("id") or ""))
+            # another person's own question is "no such question", never "not yours"
+            if q is None or (q["kind"] == "mine" and q["owner"] != who):
+                raise ValueError("No such question.")
+            if q["kind"] != "mine" and not admin:
+                raise ValueError(ONLY_ADMINS)
+        if action == "team" and body.get("from"):
+            src = library.get(str(body["from"]))
+            if not src or src["kind"] != "suggestion":
+                raise ValueError("No such suggestion.")
+        dataset = (q or src or {}).get("dataset") or str(body.get("dataset") or "")
+        if action in ("save", "suggest", "team", "check") and not levels.get(dataset):
+            raise ValueError("You have no access to this dataset.")
+
+        def unconfirmed(*texts) -> dict | None:
+            if body.get("confirm"):
+                return None
+            why = library.identifying(" ".join(str(t or "") for t in texts))
+            return {"ok": False, "confirm": why} if why else None
+
+        out: dict = {"ok": True}
+        if action == "save":
+            text, name = library.clean_text(body.get("text")), library.clean_name(body.get("name"))
+            if not text:
+                raise ValueError("Write the question first.")
+            team = bool(body.get("team"))
+            if team and not admin:
+                raise ValueError(ONLY_ADMINS)
+            stop = unconfirmed(text, name) if team else None
+            if stop:
+                return stop
+            out["saved"] = library.save_mine(who, dataset, text, name)["id"]
+            if team:
+                expected = level = trace_id = thread = None
+                data = tracing.find(_trace_root(), str(body.get("trace") or ""), who) if body.get("trace") else None
+                if data and data.get("dataset") == dataset and data.get("answer"):
+                    fig = headline_figure(data["answer"])
+                    expected = "" if fig is None else str(fig)
+                    level, trace_id, thread = data.get("access_level"), data.get("id"), data.get("thread")
+                out["team_id"] = library.add_team(
+                    who, dataset, text, name, pinned=bool(body.get("pinned")), expected=expected,
+                    expected_level=level, trace=trace_id, thread=thread)["id"]
+        elif action == "edit":
+            text = body.get("text")
+            if q["kind"] == "team" and text is not None and library.clean_text(text) != q["text"]:
+                stop = unconfirmed(text, body.get("name"))
+                if stop:
+                    return stop
+            library.edit(q["id"], name=body.get("name"), text=text,
+                         pinned=body.get("pinned") if q["kind"] == "team" else None)
+        elif action == "delete":
+            library.delete(q["id"])
+            if q["kind"] == "team":
+                _forget_check(q.get("check_thread"))
+        elif action == "suggest":
+            if q["kind"] != "mine":
+                raise ValueError("Only your own questions can be suggested.")
+            library.suggest(who, q["id"])
+        elif action == "team":
+            text = library.clean_text(body.get("text") or (src or {}).get("text"))
+            name = library.clean_name(body["name"] if body.get("name") is not None else (src or {}).get("name"))
+            if not text:
+                raise ValueError("Write the question first.")
+            stop = unconfirmed(text, name)
+            if stop:
+                return stop
+            out["team_id"] = library.add_team(who, dataset, text, name, pinned=bool(body.get("pinned")),
+                                              origin=src["id"] if src else None)["id"]
+            if src:
+                library.set_status(src["id"], "added", who)
+        elif action == "status":
+            library.set_status(q["id"], str(body.get("status") or ""), who)
+        elif action == "check":
+            if q:
+                ids = [q["id"]]
+            elif body.get("all"):
+                ids = [t["id"] for t in library.team(dataset)]
+            else:
+                raise ValueError("Say which question to check, or all of them.")
+            out["queued"] = CHECKS.submit(ids, who, allow_su)
+        elif action == "keep":
+            library.keep(q["id"], who)
+        if body.get("view") == "admin" and admin:
+            out.update(self._library_admin(info, dataset))
+        else:
+            out.update(self._library_page(who, dataset, levels.get(dataset), admin))
+        return out
+
+    @staticmethod
+    def _library_used(qid: str, who: str, allow_su: bool, dataset: str | None) -> None:
+        """Count a question asked from the library: one's own, or an active team question
+        of a dataset one may open, asked on that dataset."""
+        try:
+            if not library.enabled():
+                return
+            q = library.get(qid)
+            if not q or q["dataset"] != dataset:
+                return
+            if (q["kind"] == "mine" and q["owner"] == who) or (
+                    q["kind"] == "team" and q["status"] == "active" and _access_level(dataset, who, allow_su)):
+                library.record_use(q["id"], who)
+        except Exception as exc:  # noqa: BLE001
+            print(f"question library: {exc}", file=sys.stderr)
+
     def _trace(self, params):
         """One answer's full trace, for the person who asked it (see trace.py), as long as
         their access on the dataset still allows what it holds."""
@@ -2998,6 +3355,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         thread = (params.get("thread") or [None])[0]
         model = (params.get("model") or [None])[0]
+        picked = (params.get("from") or [None])[0]
+        if picked:
+            self._library_used(picked, who, allow_su, dataset)
         stream = ask_stream(question, dataset, who, allow_su, thread, model)
         try:
             for event, payload in stream:
@@ -3032,6 +3392,7 @@ def main() -> int:
     if repaired:
         print(f"traces: {repaired} record(s) given back their owner", file=sys.stderr)
     pruned = usage.prune()
+    stale = library.clear_unfinished() if library.enabled() else 0
     print(f"Chiron Ask running at http://localhost:{PORT}")
     if REQUIRE_SESSION:
         print(f"  identity : the user logged into Chiron, nobody else (ceiling {CONFIG.max_access_level})")
@@ -3045,6 +3406,8 @@ def main() -> int:
           + (f", {pruned} old row(s) pruned" if pruned else "")
           + (f", everyone's to superusers and the group {USAGE_GROUP!r}" if USAGE_GROUP
              else ", everyone's to superusers"))
+    print(f"  questions: {library.path() or 'off'}"
+          + (f", {stale} unfinished check(s) marked failed" if stale else ""))
     print("  Ctrl-C to stop")
     try:
         srv.serve_forever()

@@ -519,6 +519,29 @@ def backfill(lines) -> dict:
     return {"answers": seen, "written": written, "kept": seen - written}
 
 
+def average_cost(dataset: str | None = None, days: int = 30) -> float | None:
+    """What a finished answer has cost lately, on average (the last `days` days, on
+    `dataset` when given, else anywhere): the Admin page's estimate before a check.
+    None when the ledger is off or has no such answers."""
+    p = path()
+    if p is None:
+        return None
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        con = _connect(p)
+        try:
+            for where, args in ((" AND dataset = ?", [dataset]), ("", [])) if dataset else (("", []),):
+                row = con.execute("SELECT AVG(cost_usd), COUNT(*) FROM answers WHERE status = 'ok' "
+                                  "AND cost_usd IS NOT NULL AND ended >= ?" + where, [since] + args).fetchone()
+                if row and row[1]:
+                    return float(row[0])
+        finally:
+            con.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"usage ledger: {exc}", file=sys.stderr)
+    return None
+
+
 def period(name: str, now: float | None = None) -> tuple[str | None, str | None]:
     """The [since, until) pair for a period name: today, 7d, 30d, 90d, all, or a
     YYYY-MM-DD..YYYY-MM-DD range (the end day included)."""
