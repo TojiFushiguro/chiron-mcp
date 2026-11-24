@@ -68,6 +68,13 @@ flowchart LR
   Chiron runs on your own computer.
 - **An AI model**: Claude, OpenAI, Gemini, or a model on your own computer. With PHI, a
   PHI-safe one (see the warning above).
+- **About 2 GB of free memory** for Ask, a little more with the OpenAI/Gemini translator
+- **Internet access** to build Ask, and to reach your AI model (not needed for a model on
+  your own computer). Behind a proxy? See [Behind a proxy](#behind-a-proxy).
+- **Chiron's normal login.** Ask sees who is signed in through Chiron's own login. Single
+  sign-on in front of Chiron is fine, as long as people end up logged in to Chiron.
+
+It works on a Mac, on a Windows PC (see [On Windows](#on-windows)) and on a server.
 
 Other Chiron versions haven't been tested. The check in step 7 tells you quickly if
 something doesn't fit.
@@ -76,7 +83,8 @@ something doesn't fit.
 
 Do these once, on the machine that runs Chiron. Running Chiron on your own laptop or
 desktop? Follow the same steps with the small changes in
-[Chiron on your own computer](#chiron-on-your-own-computer).
+[Chiron on your own computer](#chiron-on-your-own-computer). On Windows, a few commands
+differ: see [On Windows](#on-windows).
 
 ### Step 1. Download the add-on
 
@@ -133,7 +141,7 @@ with the add-on and starts next to Ask. Add your key (or both) and these lines:
 ```bash
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
-# any long random string, for example from: openssl rand -hex 24
+# any long random string, for example from: python3 -c "import secrets; print(secrets.token_hex(24))"
 LITELLM_MASTER_KEY=...
 # the models people can pick, as id=Label, separated by commas
 CHIRON_MCP_ASK_MODELS=gpt-6.2-sol=GPT-6.2 Sol,gemini-3.8-flash=Gemini 3.8 Flash
@@ -312,6 +320,30 @@ If port 8900 is already taken on your computer, pick another one, for example 89
 Using the translator for OpenAI or Gemini and Chiron's Docker network together? List all
 three files: `COMPOSE_FILE=compose.yml:compose.litellm.yml:compose.network.yml`.
 
+## On Windows
+
+Ask works with Docker Desktop on Windows too. It hasn't been tried on Windows yet, so
+these are the differences to know:
+
+- Run the commands in PowerShell, with two changes:
+  - Step 1: use `copy env.example .env` instead of `cp env.example .env && chmod 600 .env`.
+  - Step 7 and the key in Step 3: use `python` instead of `python3`.
+- In `.env`, write paths with forward slashes, for example
+  `CHIRON_SRC=C:/Users/you/is4r-chiron`.
+- For the Ask tab (Step 6), put the setting in a file instead of in front of the command.
+  In the UI folder, create a file named `.env.local` with this one line:
+
+  ```bash
+  VITE_ASK_URL=/ask
+  ```
+
+  (or `VITE_ASK_URL=http://localhost:8900` on your own computer). Then run
+  `npm run build` or `npm run dev` as usual. To remove Ask later, delete that line.
+- Postgres installed directly on Windows works as it is: nothing to change.
+- If Ask can't reach Ollama on the same PC, start Ollama with `OLLAMA_HOST=0.0.0.0`.
+- The `COMPOSE_FILE` lines work as written, because `.env` already has
+  `COMPOSE_PATH_SEPARATOR=:`.
+
 ## Who can see what
 
 Ask follows Chiron's own permissions. Nobody gets more than their account allows.
@@ -437,6 +469,21 @@ If Chiron keeps its metadata in SQLite, Ask can't run in Docker. The
 [README](README.md#run-it-on-the-host-instead-a-sqlite-deployment-no-docker) shows how to
 run it directly on the server instead.
 
+### Behind a proxy
+
+If your network reaches the internet through a proxy:
+
+- For building Ask, set the proxy in Docker Desktop: Settings, Resources, Proxies.
+- For answers, add these lines to `.env`:
+
+  ```bash
+  HTTPS_PROXY=http://proxy.example.org:8080
+  NO_PROXY=localhost,127.0.0.1,host.docker.internal,litellm
+  ```
+
+  `NO_PROXY` keeps Ask's calls to a model on your own computer, and to the translator,
+  off the proxy. The translator for OpenAI or Gemini uses the same two lines.
+
 ### Trying it with your own Claude account
 
 For a quick test by yourself, you can log the container in to your own Claude account
@@ -451,5 +498,5 @@ with `docker compose exec -it ask claude`. Don't use this for a team, and never 
   network of a Chiron running in Docker.
 - AI models: Claude on Amazon Bedrock; a model on the same computer (Ollama), both
   directly and through the OpenAI/Gemini translator.
-- **Not tested yet:** real OpenAI, Gemini and Anthropic API keys, and a Linux server (so
-  far every test ran on a Mac with Docker Desktop).
+- **Not tested yet:** real OpenAI, Gemini and Anthropic API keys, Windows, and a Linux
+  server (so far every test ran on a Mac with Docker Desktop).

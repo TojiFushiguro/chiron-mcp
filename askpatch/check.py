@@ -123,7 +123,12 @@ def main():
     session, err = in_container("python", "/app/deploy/mint_session.py", user)
     check(f"a Chiron session for {user}", bool(re.fullmatch(r"[0-9a-z]{20,}", session or "")),
           "made inside the ask container" if session else err[-160:])
-    cookie = {"Cookie": f"sessionid={session}"} if session else {}
+    # the login cookie's name: Django's SESSION_COOKIE_NAME, "sessionid" unless renamed
+    name, _ = in_container("python", "-c", "from chiron_mcp.bootstrap import ensure_django; "
+                           "ensure_django(); from django.conf import settings; "
+                           "print(settings.SESSION_COOKIE_NAME)")
+    name = name if re.fullmatch(r"[A-Za-z0-9_.-]+", name or "") else "sessionid"
+    cookie = {"Cookie": f"{name}={session}"} if session else {}
 
     status, body, _ = get(f"{ask}/datasets?dataset={urllib.parse.quote(dataset)}", cookie)
     try:

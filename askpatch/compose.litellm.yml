@@ -11,12 +11,16 @@ services:
     image: ghcr.io/berriai/litellm:${LITELLM_VERSION:-v1.106.12}
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
-      # the key Ask uses to call LiteLLM: any long random string (openssl rand -hex 24)
+      # the key Ask uses to call LiteLLM: any long random string, such as
+      #   python3 -c "import secrets; print(secrets.token_hex(24))"
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in askpatch/.env}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # for Claude models listed in litellm.yaml too
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # a proxy on the way out to OpenAI or Google, when the network needs one
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
     volumes:
       - ./litellm.yaml:/app/config.yaml:ro
     extra_hosts:

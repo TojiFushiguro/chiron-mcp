@@ -99,7 +99,11 @@ The rest of this page explains each step.
   "A Chiron on your own computer" below.
 - Sessions in Django's database or cache backends (the default), whatever the cookie is
   named.
-- Docker with Compose v2.17 or newer (for `additional_contexts`).
+- Docker with Compose v2.17 or newer (for `additional_contexts`), and about 2 GB of free
+  memory for Ask (a little more with LiteLLM).
+- Internet access to build the image and to reach the model, unless the model runs on
+  this machine. Behind a proxy: `HTTPS_PROXY` and `NO_PROXY` in `.env` for answers, and
+  Docker Desktop's proxy settings for the build.
 - A way to reach a model: Claude (an Anthropic API key, or Amazon Bedrock through the
   machine's role or an AWS profile), OpenAI or Google Gemini (through LiteLLM,
   [compose.litellm.yml](compose.litellm.yml)), or a model on your own computer or network.
@@ -125,6 +129,12 @@ two databases **as the container reaches them** (a Postgres on the same machine 
 prefix if it has one), and the models. Everything in it reaches the container, so a
 settings module that reads environment variables gets them too. Extra Python packages the
 project needs go in [requirements-extra.txt](requirements-extra.txt) before the build.
+
+**On Windows** (Docker Desktop), run the same commands in PowerShell, with `copy` for `cp`
+(no `chmod`), `python` for `python3`, and forward slashes in the paths in `.env`. Put
+`VITE_ASK_URL` in the UI's `.env.local` file rather than in front of the build command.
+`COMPOSE_PATH_SEPARATOR=:` in `.env` keeps the `COMPOSE_FILE` lines working. Not tried on
+Windows yet; [guide.md](guide.md#on-windows) has the details.
 
 **The route.** Add the snippet for your web server from [proxy/](proxy/) to the site
 that serves Chiron, then reload it. It forwards `/ask` to `127.0.0.1:8900` (`ASK_BIND` in
