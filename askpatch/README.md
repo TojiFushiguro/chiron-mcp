@@ -324,47 +324,7 @@ Reports people saved through Ask stay, as any saved report would.
 
 ## Setup guide for an AI agent
 
-Paste this to Claude Code on the machine that runs Chiron. Fill in the first block.
-
-````text
-CHIRON_SRC      = /srv/chiron/is4r-chiron          (the checkout holding chiron/)
-PROJECT_DIR     = /srv/chiron/is4r-chiron/test_project   (the directory holding manage.py)
-PUBLIC_URL      = https://chiron.example.org       (where people open Chiron, with its prefix)
-WEB_SERVER      = nginx                            (caddy, nginx or apache; its config file)
-METADATA_DB     = postgresql://user:pass@host.docker.internal:5432/chiron_meta
-WAREHOUSE_URL   = postgresql://user:pass@host.docker.internal:5432/chiron
-MODEL           = claude api key | bedrock | openai or gemini (litellm) | local model (ollama) | claude account (a trial)
-PHI             = yes | no                         (does the data hold PHI?)
-
-Add the Ask tab to this Chiron with chiron-mcp's askpatch, without changing Chiron.
-Repo: https://github.com/TojiFushiguro/chiron-mcp, clone to ~/chiron-mcp (git pull if there).
-Read askpatch/README.md first.
-
-Limits: touch only ~/chiron-mcp/askpatch, the chiron-askpatch container, the one web
-server snippet, and the UI build. Do not edit Chiron's code, settings or databases, and
-do not run migrations. Never print or paste askpatch/.env. Ask me before reloading the
-web server and before rebuilding the UI. If PHI is yes, confirm with me that the model is
-approved for PHI (a BAA, or a model on the organization's own network) before
-connecting it.
-
-1. Check Docker (Compose 2.17+) and that the two databases answer from a container:
-   docker run --rm postgres:17 pg_isready -d "<each URL>". If one does not, stop and tell me.
-2. Write askpatch/.env from env.example with the values above (chmod 600), and
-   docker compose up -d --build. Show me the last lines of the build if it fails.
-3. Show me the snippet from askpatch/proxy/ for WEB_SERVER, adapted to the prefix in
-   PUBLIC_URL if any, and where it goes in the config; apply it when I agree, then reload.
-   If Chiron runs on this computer with no web server, skip this and follow README
-   "A Chiron on your own computer" (ASK_URL, and the tab pointing at Ask itself).
-4. The UI: copy askpatch/ui/ask.tsx to its src/ask.tsx and wrap the settings in
-   src/overrideConfig.tsx with withAsk (README, "The Ask tab"; if that file already has an
-   Ask tab at http://localhost:8900, apply askpatch/ui-ask-tab.patch instead); then rebuild
-   it with VITE_ASK_URL=/ask the way this deployment builds it, when I agree.
-5. The model: for a Claude API key, or OpenAI or Gemini keys, tell me to add the key to
-   .env myself; for OpenAI or Gemini also set COMPOSE_FILE, LITELLM_MASTER_KEY and the
-   models (README "The model", litellm.yaml); for Bedrock or a local model set the lines
-   from README "The model" in .env; for a Claude account tell me to run
-   `docker compose exec -it ask claude` myself and log in. Then docker compose up -d.
-6. python3 askpatch/check.py --user <an account I name> and show me every line.
-7. Tell me what was added (container, snippet, UI switch), what was not touched, and how
-   to remove it.
-````
+An AI assistant that can run commands on the machine that runs Chiron (Claude Code, for
+example) can do the whole setup. [guide.md](guide.md#set-up-with-ai-fastest) has the
+prompt to paste: it asks two questions (the model, and whether the data holds PHI),
+finds the rest itself, keeps secrets in `.env`, and leaves keys and sudo to the person.

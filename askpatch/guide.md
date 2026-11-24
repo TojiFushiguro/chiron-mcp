@@ -14,6 +14,73 @@ exactly how it was.
 > BAA), or a model running on your own computer or network. Never use a personal account
 > or a free plan. If you're not sure, ask your privacy or compliance office.
 
+## Set up with AI (fastest)
+
+If you use an AI assistant that can run commands on your computer, such as Claude Code,
+it can do the whole setup for you. Open it on the computer where Chiron runs, paste the
+prompt below, and answer its two questions. It will ask you to type your AI key into
+`.env` yourself, and to run any command that needs your password.
+
+```text
+Set up the Ask add-on for the Chiron that runs on this computer. Do the whole setup in
+one go.
+
+What Ask is: an add-on for Chiron. It adds one Docker container, a /ask route in the web
+server in front of Chiron (none when Chiron runs only on this computer), and an Ask tab
+in the Chiron UI. It never changes Chiron's own code, settings or databases.
+
+1. Get the add-on: clone https://github.com/TojiFushiguro/chiron-mcp.git into
+   ~/chiron-mcp, or git pull if it is already there. Read ~/chiron-mcp/askpatch/guide.md
+   completely before you start, and follow it: it is the source of truth. On Windows,
+   follow its "On Windows" section too.
+
+2. Ask me these two questions together, in one message. After that, don't stop to ask
+   me anything unless you are truly stuck.
+   a. Which AI model should Ask use: Claude with an Anthropic API key, Claude on Amazon
+      Bedrock, OpenAI, Google Gemini, or a model on this computer (Ollama)?
+   b. Does the Chiron data contain PHI (real patient data)? If yes, I must confirm that
+      the model is approved for PHI by my organization (covered by a BAA) or runs on
+      this computer or network. Never connect any other model to PHI.
+
+3. Work out everything else yourself, by looking at this computer:
+   - the Chiron source folder (it holds chiron/ and requirements/), its Django project
+     folder (it holds manage.py) and its settings module
+   - Chiron's two databases, from the Django settings (DATABASES and
+     CHIRON_SQL_ALCHEMY_CONNECTION_STRING), written the way a container reaches them
+   - where people open Chiron, and whether a web server (nginx, Apache or Caddy) is in
+     front of it, or Chiron runs only on this computer (then follow the guide's
+     "Chiron on your own computer")
+   - the Chiron UI source folder (is4r-chiron-ui), and how it is built, run and
+     deployed here
+   - an existing Chiron account that can see a dataset, for the check
+   If you find two possible answers and can't tell which is right (for example two
+   Chiron folders), ask me, with your best guess.
+
+4. Rules:
+   - Don't change Chiron's code, settings or databases, and don't run migrations. Only
+     touch ~/chiron-mcp/askpatch, Ask's Docker containers, the /ask lines in the web
+     server, and the Ask tab in the UI (src/ask.tsx, the two lines in
+     src/overrideConfig.tsx, and VITE_ASK_URL).
+   - Don't open or print patient records. The check only needs counts.
+   - Secrets go only into askpatch/.env, with chmod 600. Never show .env, passwords or
+     keys in this chat, and never ask me to paste a key here: tell me the exact line to
+     add to .env myself, then wait until I say done.
+   - Back up a web server config file before you edit it, test the config before you
+     reload, and reload gracefully.
+   - If a command needs sudo or a password, show me the exact command and let me run it.
+   - If Docker isn't installed or running, tell me what to do and wait.
+   - When something fails, read the logs and use the guide's "If something goes wrong"
+     table. Fix it and try again before you ask me.
+
+5. You're done when docker compose ps shows Ask as healthy, python3 check.py passes every
+   line, and the Ask tab is in the UI build. Then tell me in a few short lines: what you
+   added and where, which model Ask uses, how to open Ask, how to turn it off for a
+   while, and how to remove it.
+```
+
+The assistant follows the steps in this guide, so you can read them below to see what it
+does, or do them yourself by hand.
+
 ## In short
 
 You add three things next to your Chiron:
