@@ -3,6 +3,7 @@
     python3 check.py                      # from the askpatch/ directory, after compose up
     python3 check.py --user alice --dataset synthea-10k
     python3 check.py --url https://other.example.org   # through another front door than PUBLIC_URL
+    python3 check.py --ask-url http://localhost:8900   # Ask opened directly (ASK_URL), no web server
 
 Standard library only. Reads askpatch/.env for PUBLIC_URL and ASK_BIND, makes a real
 Chiron login session inside the ask container (no password is typed or sent), and then
@@ -92,9 +93,13 @@ def main():
         sys.exit("PUBLIC_URL is not set in askpatch/.env")
     bind = e.get("ASK_BIND", "127.0.0.1:8900")
     local = "http://" + (bind if ":" in bind else f"127.0.0.1:{bind}")
+    # Where browsers reach Ask: <PUBLIC_URL>/ask through the web server in front of
+    # Chiron, or, for a Chiron on this computer with no web server, ASK_URL directly.
+    ask = (arg("--ask-url") or e.get("ASK_URL") or base + "/ask").rstrip("/")
+    direct = ask != base + "/ask"
     user = arg("--user", e.get("ASK_CHECK_USER") or "demouser")
     dataset = arg("--dataset", e.get("ASK_CHECK_DATASET") or "")
-    print(f"checking {base} (Ask container at {local}) as {user}\n")
+    print(f"checking {base} (Ask at {ask}, container at {local}) as {user}\n")
 
     status, body, _ = get(local + "/health", timeout=10)
     try:
@@ -108,18 +113,19 @@ def main():
     status, body, _ = get(base + "/accounts/login/")
     check("Chiron's login page", status == 200 and "login" in body.lower(), f"HTTP {status}" if status else body)
 
-    status, body, _ = get(base + "/ask/")
-    check("the Ask page through the site (the /ask route)", status == 200 and "Ask Chiron" in body,
-          f"HTTP {status}" if status else body)
+    status, body, _ = get(ask + "/")
+    check(f"the Ask page at {ask}" if direct else "the Ask page through the site (the /ask route)",
+          status == 200 and "Ask Chiron" in body, f"HTTP {status}" if status else body)
     if status != 200:
-        print("     The web server does not forward /ask to the Ask container yet; see proxy/.")
+        print("     Nothing answers at ASK_URL: it should name the port in ASK_BIND." if direct else
+              "     The web server does not forward /ask to the Ask container yet; see proxy/.")
 
     session, err = in_container("python", "/app/deploy/mint_session.py", user)
     check(f"a Chiron session for {user}", bool(re.fullmatch(r"[0-9a-z]{20,}", session or "")),
           "made inside the ask container" if session else err[-160:])
     cookie = {"Cookie": f"sessionid={session}"} if session else {}
 
-    status, body, _ = get(f"{base}/ask/datasets?dataset={urllib.parse.quote(dataset)}", cookie)
+    status, body, _ = get(f"{ask}/datasets?dataset={urllib.parse.quote(dataset)}", cookie)
     try:
         info = json.loads(body)
     except ValueError:
@@ -141,7 +147,7 @@ def main():
     check(f"Chiron counts {dataset}", count is not None, f"{count} subjects" if count else err[-160:])
 
     q = urllib.parse.quote("How many patients are in this dataset?")
-    status, body, spread = get(f"{base}/ask/ask?q={q}&dataset={urllib.parse.quote(dataset)}",
+    status, body, spread = get(f"{ask}/ask?q={q}&dataset={urllib.parse.quote(dataset)}",
                                cookie, timeout=300)
     events = dict(re.findall(r"event: (\w+)\ndata: (.*)", body))
     answer = json.loads(events["answer"]) if "answer" in events else ""
@@ -158,7 +164,8 @@ def main():
         # The events of an answer arrive over its whole run; a proxy that buffers hands
         # them over all at once at the end, and the page then shows nothing until then.
         if answer:
-            check("answers stream through the web server", spread > 1.0,
+            check("answers stream to the browser" if direct else "answers stream through the web server",
+                  spread > 1.0,
                   f"{spread:.1f} s between the first and the last event")
 
     print(f"\n{sum(results)}/{len(results)} passed")

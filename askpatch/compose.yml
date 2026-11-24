@@ -33,6 +33,8 @@ services:
       CHIRON_MCP_WAREHOUSE_URL: ${CHIRON_MCP_WAREHOUSE_URL:?set CHIRON_MCP_WAREHOUSE_URL in askpatch/.env}
       # where people open Chiron; the Query and Report buttons link there
       CHIRON_MCP_UI_URL: ${PUBLIC_URL:?set PUBLIC_URL in askpatch/.env}
+      # where browsers reach Ask when no web server is in front (a Chiron on this computer)
+      CHIRON_MCP_ASK_URL: ${ASK_URL:-}
       # every question comes from someone logged into Chiron; there is no fallback account
       CHIRON_MCP_REQUIRE_SESSION: "1"
       # the Query button loads the answer's cohort into Chiron, and reports can be saved

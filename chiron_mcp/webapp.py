@@ -2440,6 +2440,12 @@ class Handler(BaseHTTPRequestHandler):
             f"http://localhost:{PORT}", f"http://127.0.0.1:{PORT}",
             f"{ui.scheme}://{ui.netloc}" if ui.netloc else CONFIG.ui_url,
         }
+        # Opened directly rather than through Chiron's web server (a Chiron on someone's
+        # own computer): the page's own POSTs carry the origin browsers use for this
+        # server, on whatever port it is published.
+        direct = urlparse(os.environ.get("CHIRON_MCP_ASK_URL", ""))
+        if direct.scheme and direct.netloc:
+            allowed.add(f"{direct.scheme}://{direct.netloc}")
         extra = os.environ.get("CHIRON_MCP_ALLOWED_ORIGINS", "")
         return allowed | {o.strip() for o in extra.split(",") if o.strip()}
 
