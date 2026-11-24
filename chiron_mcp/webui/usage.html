@@ -182,6 +182,7 @@
   .q-table tr.look td { background: #fffaf0; }
   .q-table tr.retired td { color: var(--muted); }
   .q-name { font-weight: 500; color: var(--ink); }
+  .q-topic { display: inline-block; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-strong); margin-bottom: 2px; }
   .q-text { color: var(--muted); font-size: 12.5px; line-height: 1.4; max-width: 420px; }
   .q-sub { color: var(--muted); font-size: 12px; }
   .q-pin { border: 0; background: none; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; color: #c9d0d5; }
@@ -870,6 +871,7 @@ function qRow(q) {
   pin.onclick = async () => { pin.disabled = true; const r = await qPost('edit', { id: q.id, pinned: !q.pinned }); if (r.error) { qMsg(r.error, 'bad'); pin.disabled = false; } };
   tr.appendChild(cell(pin));
   const qc = el('td');
+  if (q.topic) qc.appendChild(el('div', 'q-topic', q.topic));
   if (q.name) qc.appendChild(el('div', 'q-name', q.name));
   qc.appendChild(el('div', q.name ? 'q-text' : 'q-name', q.text));
   tr.appendChild(qc);
@@ -955,7 +957,14 @@ function qForm(opts) {
   const text = el('textarea'); text.rows = 2; text.maxLength = 1000; text.value = opts.text || '';
   const nl = el('label', 'f'); nl.append('Name (optional)', name);
   const tl = el('label', 'f'); tl.append('Question', text);
-  form.append(nl, tl);
+  const topic = el('input'); topic.type = 'text'; topic.maxLength = 40; topic.value = opts.topic || '';
+  topic.placeholder = 'For example: Medications';
+  topic.setAttribute('list', 'q-topics');
+  const dl = el('datalist'); dl.id = 'q-topics';
+  [...new Set(((QDATA && QDATA.team) || []).map(q => q.topic).filter(Boolean))].sort()
+    .forEach(t => { const o = el('option'); o.value = t; dl.appendChild(o); });
+  const pl0 = el('label', 'f'); pl0.append('Topic (groups it in the Questions panel)', topic, dl);
+  form.append(nl, tl, pl0);
   let pin = null;
   if (opts.pin) {
     pin = document.createElement('input'); pin.type = 'checkbox';
@@ -976,7 +985,7 @@ function qForm(opts) {
   form.onsubmit = async e => {
     e.preventDefault();
     ok.disabled = true; msg.textContent = '';
-    const r = await opts.submit({ name: name.value, text: text.value, pinned: !!(pin && pin.checked), confirm: confirmed });
+    const r = await opts.submit({ name: name.value, text: text.value, topic: topic.value, pinned: !!(pin && pin.checked), confirm: confirmed });
     ok.disabled = false;
     if (r.ok === false && r.confirm) {
       confirmed = true; ok.textContent = 'Add anyway';
@@ -997,7 +1006,7 @@ function qOpenAdd(src) {
   card.classList.remove('hide');
   card.appendChild(qForm({
     title: src ? 'Add a suggested question to Team questions' : 'Add a team question to ' + ((QDATA.datasets || []).find(x => x.id === QDS) || {}).name,
-    name: src ? src.name : '', text: src ? src.text : '', pin: true, button: 'Add',
+    name: src ? src.name : '', text: src ? src.text : '', topic: '', pin: true, button: 'Add',
     note: 'Its first check gives the expected answer: press Check after adding it.',
     cancel: () => card.classList.add('hide'),
     submit: async v => {
@@ -1010,10 +1019,10 @@ function qOpenAdd(src) {
 function qEdit(tr, q) {
   const td = el('td'); td.colSpan = 6;
   td.appendChild(qForm({
-    name: q.name, text: q.text, button: 'Save',
+    name: q.name, text: q.text, topic: q.topic, button: 'Save',
     note: 'New words clear the checked mark until the next check.',
     cancel: () => renderQuestions(QDATA),
-    submit: v => qPost('edit', { id: q.id, name: v.name, text: v.text, confirm: v.confirm }),
+    submit: v => qPost('edit', { id: q.id, name: v.name, text: v.text, topic: v.topic, confirm: v.confirm }),
   }));
   const row = el('tr'); row.appendChild(td);
   tr.replaceWith(row);

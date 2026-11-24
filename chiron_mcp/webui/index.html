@@ -348,59 +348,76 @@
   .model:hover { color: var(--ink); }
   .model:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
 
-  /* the question library: the Questions button at the left of the box (the model picker
-     keeps its place by the send button), the list it opens, the new chat page's groups,
-     and Save question under an answer */
-  .composer-wrap { position: relative; }
-  .composer.has-lib { padding-left: 8px; }
-  .lib-btn {
-    flex: none; align-self: center; display: inline-flex; align-items: center; gap: 6px;
-    font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; cursor: pointer;
-    transition: border-color .15s, background .15s, color .15s;
-  }
-  .lib-btn:hover, .lib-btn[aria-expanded="true"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
-  .lib-btn:disabled { opacity: .5; cursor: default; }
+  /* the question library: the Questions button in the top bar (beside Share and Export
+     PDF), the panel it opens, the new chat page's groups, and Save question under an answer */
   .lib-pop {
-    position: absolute; left: max(24px, calc(50% - 376px)); bottom: calc(100% - 4px); z-index: 20;
-    width: min(500px, calc(100% - 48px)); max-height: min(460px, 62vh); display: flex; flex-direction: column;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
-    box-shadow: 0 10px 34px rgba(16, 24, 32, .18); overflow: hidden;
+    position: absolute; top: 58px; right: 16px; z-index: 30;
+    width: min(880px, calc(100% - 32px)); height: min(640px, calc(100% - 140px)); min-height: 300px;
+    display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: 0 16px 48px rgba(16, 24, 32, .2); overflow: hidden;
   }
-  .lib-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line-2); }
-  .lib-find {
-    flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 10px;
-    border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink);
-  }
+  .lib-top { display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; }
+  .lib-top h3 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lib-top h3 small { font-weight: 400; color: var(--muted); font-size: 12.5px; margin-left: 8px; }
   .lib-tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; flex: none; }
-  .lib-tabs button { border: 0; background: none; padding: 5px 10px; font: inherit; font-size: 12.5px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+  .lib-tabs button { border: 0; background: none; padding: 5px 12px; font: inherit; font-size: 12.5px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
   .lib-tabs button + button { border-left: 1px solid var(--line); }
   .lib-tabs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 500; }
-  .lib-list { overflow-y: auto; flex: 1; min-height: 0; }
-  .lib-item { border-bottom: 1px solid var(--line-2); }
-  .lib-item:last-child { border-bottom: 0; }
-  .lib-item > button.pick {
-    display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
-    padding: 9px 14px; font: inherit; color: var(--ink);
+  .lib-x { width: 30px; height: 30px; border-radius: 8px; border: 0; background: none; cursor: pointer; color: var(--muted); display: grid; place-items: center; flex: none; }
+  .lib-x:hover { background: var(--panel); color: var(--ink); }
+  .lib-search { padding: 0 16px 12px; border-bottom: 1px solid var(--line-2); }
+  .lib-find {
+    width: 100%; font: inherit; font-size: 13.5px; padding: 8px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink);
   }
-  .lib-item > button.pick:hover, .lib-item > button.pick:focus-visible { background: var(--accent-soft); outline: 0; }
-  .lib-item .nm { display: block; font-size: 13.5px; font-weight: 500; }
-  .lib-item .tx { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
-  .lib-item .mt { display: block; font-size: 11.5px; color: var(--faint); margin-top: 2px; }
-  .lib-item .mt .ok { color: var(--pass); }
-  .lib-item .mt.review { color: var(--warn); }
-  .lib-acts, .lib-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 14px 9px; }
+  .lib-main { flex: 1; min-height: 0; display: flex; }
+  .lib-nav { width: 214px; flex: none; overflow-y: auto; padding: 10px 8px; background: var(--panel); border-right: 1px solid var(--line-2); }
+  .lib-nav button {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+    border: 0; background: none; cursor: pointer; text-align: left; font: inherit; font-size: 13px;
+    color: var(--ink-2); padding: 7px 10px; border-radius: 8px;
+  }
+  .lib-nav button:hover { background: #eceff1; }
+  .lib-nav button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 500; }
+  .lib-nav .n { font-size: 11.5px; color: var(--faint); font-weight: 400; }
+  .lib-list { flex: 1; min-width: 0; overflow-y: auto; padding: 14px 16px 18px; }
+  .lib-sec { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 2px 2px 8px; }
+  .lib-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+  .lib-card {
+    border: 1px solid var(--line); border-radius: 11px; background: var(--bg); display: flex; flex-direction: column;
+    min-width: 0; transition: border-color .15s, box-shadow .15s;
+  }
+  .lib-card:hover { border-color: var(--accent-line); box-shadow: var(--shadow); }
+  .lib-card > button.pick {
+    flex: 1; display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
+    padding: 10px 12px; font: inherit; color: var(--ink); border-radius: 11px;
+  }
+  .lib-card > button.pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .lib-card .nm { display: block; font-size: 13.5px; font-weight: 500; margin-bottom: 2px; }
+  .lib-card .tx { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+  .lib-card .mt { display: block; font-size: 11.5px; color: var(--faint); margin-top: 6px; }
+  .lib-card .mt .ok { color: var(--pass); }
+  .lib-card .mt.review { color: var(--warn); }
+  .lib-acts, .lib-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 12px 10px; }
   .lib-confirm span { font-size: 12.5px; color: var(--danger); }
-  .lib-edit { display: flex; flex-direction: column; gap: 6px; padding: 9px 14px; background: var(--panel); border-bottom: 1px solid var(--line-2); }
+  .lib-edit { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--panel); border-radius: 11px; grid-column: 1 / -1; }
   .lib-edit input, .lib-edit textarea, .save-form input[type=text], .save-form textarea {
     font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
     background: var(--bg); color: var(--ink); resize: vertical; width: 100%;
   }
   .lib-edit .row { display: flex; gap: 6px; align-items: center; }
   .lib-msg { font-size: 12px; color: var(--danger); }
-  .lib-empty { padding: 16px 14px; font-size: 13px; color: var(--muted); line-height: 1.5; }
-  .lib-foot { padding: 8px 14px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line-2); }
-  .lib-foot.err { color: var(--danger); }
+  .lib-empty { padding: 18px 4px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+  .lib-foot { display: flex; align-items: center; gap: 14px; padding: 9px 16px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line-2); }
+  .lib-foot span { flex: 1; }
+  .lib-foot.err span { color: var(--danger); }
+  .lib-foot a { color: var(--accent-strong); text-decoration: none; white-space: nowrap; }
+  .lib-foot a:hover { text-decoration: underline; }
+  @media (max-width: 760px) {
+    .lib-nav { display: none; }
+    .lib-grid { grid-template-columns: 1fr; }
+    .lib-pop { right: 8px; width: calc(100% - 16px); }
+  }
   .lib-label {
     font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
     text-align: left; margin: 18px 0 8px;
@@ -415,13 +432,13 @@
   }
   .save-form .admin-box .who-tag { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-strong); }
   .save-form .admin-box label { align-items: flex-start; }
+  .save-form .admin-box label.field { padding-left: 21px; max-width: 360px; }
   .save-form .admin-box input[type=checkbox] { margin: 3px 0 0; accent-color: var(--accent); }
   .save-form .exp { font-size: 12.5px; color: var(--ink-2); padding-left: 21px; }
   .warnbox {
     background: var(--warn-bg); border: 1px solid #f0dc9c; color: var(--warn); border-radius: 9px;
     padding: 8px 11px; font-size: 12.5px; line-height: 1.45;
   }
-
   .scrim { display: none; }
 
   /* ---------------------------------------------------------------- trace */
@@ -648,6 +665,11 @@
     </button>
     <h1 id="chat-title">New chat</h1>
     <div class="top-tools" id="top-tools" hidden>
+      <button class="top-btn" id="lib-btn" type="button" hidden aria-haspopup="dialog" aria-expanded="false"
+              title="Saved questions, and the team questions for this dataset">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        Questions
+      </button>
       <button class="top-btn" id="share-btn" type="button" aria-haspopup="dialog" aria-expanded="false"
               title="Let a colleague read this conversation">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
@@ -665,6 +687,7 @@
     </div>
     <div class="who" id="who" hidden><b id="who-name"></b><small id="who-level"></small></div>
   </div>
+  <div class="lib-pop" id="lib-pop" role="dialog" aria-label="Questions: saved and team questions" hidden></div>
 
   <main id="scroller">
     <div class="thread" id="thread"></div>
@@ -675,13 +698,7 @@
   </button>
 
   <div class="composer-wrap">
-    <div class="lib-pop" id="lib-pop" role="dialog" aria-label="Saved and team questions" hidden></div>
     <form class="composer" id="composer">
-      <button class="lib-btn" id="lib-btn" type="button" hidden aria-haspopup="dialog" aria-expanded="false"
-              title="Your saved questions and the team questions for this dataset">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-        <span>Questions</span>
-      </button>
       <textarea id="q" rows="1" placeholder="Ask about this dataset…" aria-label="Your question"></textarea>
       <select id="model" class="model" aria-label="The model that answers" title="The model that answers" hidden></select>
       <button class="send" id="send" type="submit" aria-label="Send" disabled>
@@ -974,12 +991,17 @@ function selectChat(id) {
 // is the owner's; a shared conversation can be exported but not shared on.
 function renderTopTools() {
   const chat = activeChat();
+  const view = document.body.classList.contains('view-mode');
   // Not for a conversation the server no longer holds (expired): nothing to share or print.
-  const show = !!(chat && chat.thread && !chat.expired && !busy && !document.body.classList.contains('view-mode'));
-  $('top-tools').hidden = !show;
+  const show = !!(chat && chat.thread && !chat.expired && !busy && !view);
+  // Questions stays, on a new chat too, whenever the server has the library.
+  const lib = !!(LIB && ME && DATASET && !view);
+  $('top-tools').hidden = !(show || lib);
+  $('lib-btn').hidden = !lib;
+  $('export-btn').hidden = !show;
+  $('share-btn').hidden = !show || !!chat.readonly;
+  $('clone-btn').hidden = !show || !chat.readonly;
   if (!show) { closeShare(); return; }
-  $('share-btn').hidden = !!chat.readonly;
-  $('clone-btn').hidden = !chat.readonly;
   const n = (chat.sharedWith || []).length;
   $('share-btn').lastChild.textContent = n ? ` Shared · ${n}` : ' Share';
 }
@@ -1459,7 +1481,6 @@ function updateComposer() {
   const theirs = !!(cur && cur.busy && cur.busy.user !== ME);
   qBox.disabled = readonly || theirs;
   if (readonly || theirs) sendBtn.disabled = true;
-  $('lib-btn').disabled = qBox.disabled;
   qBox.placeholder = readonly ? 'Shared with you, read-only. Clone it to continue on your own, or start a new chat.'
     : theirs ? ((cur.busy.name || 'A colleague') + ' is being answered in this conversation; wait for that answer…')
     : !busy ? (cur ? (cur.expired ? 'This conversation expired: a new question starts a new one…'
@@ -1825,14 +1846,15 @@ const KINDS = {
 const LEVELS = [['summary', 'Summary'], ['detailed', 'Detailed'], ['debug', 'Debug']];
 const CHECK_ICON = { fail: '✕', warn: '!', info: 'i', pass: '✓' };
 // --- the question library ----------------------------------------------------------------
-// Questions a person saved, and the team questions an admin picked for this dataset. The
-// Ask server keeps only the words (chiron_mcp/library.py); asking one is an ordinary
-// question, at the person's own access level. A server without the library (older, or
-// with it turned off) answers 404 or {on: false}, and nothing of it shows.
+// Questions a person saved, and the team questions an admin picked for this dataset, filed
+// under topics. The Ask server keeps only the words (chiron_mcp/library.py); asking one is
+// an ordinary question, at the person's own access level. A server without the library
+// (older, or with it turned off) answers 404 or {on: false}, and nothing of it shows.
 let LIB = null;        // { on, admin, level, mine: [...], team: [...] } on this dataset
 let LIB_PICK = null;   // { id, text }: the library question last put in the box
-let LIB_TAB = null, LIB_FIND = '';
+let LIB_TAB = null, LIB_FIND = '', LIB_TOPIC = '';
 const BOOKMARK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+const X_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 
 async function loadLibrary() {
   let d = null;
@@ -1842,11 +1864,9 @@ async function loadLibrary() {
 }
 function setLibrary(d) {
   LIB = d;
-  const on = !!(LIB && ME && DATASET);
-  $('lib-btn').hidden = !on;
-  $('composer').classList.toggle('has-lib', on);
-  if (!on) closeLibrary();
+  if (!(LIB && ME && DATASET)) closeLibrary();
   else if (!$('lib-pop').hidden) renderLibrary();
+  renderTopTools();
   if (!activeChat()) renderThread();   // the new chat page lists them
   else repaintAllTraces();             // Save question under each answer
 }
@@ -1879,7 +1899,7 @@ function libGroup(title, items) {
     const tag = el('small');
     if (q.kind === 'team') {
       if (q.checked) { tag.className = 'ok'; tag.textContent = '✓ Checked ' + shortDate(q.checked); }
-      else tag.textContent = 'Team';
+      else tag.textContent = q.topic || 'Team';
       b.title = (q.name ? q.name + '. ' : '') + (q.checked ? 'Ask gave the expected answer when an admin last checked it.'
                : q.review ? 'An admin is looking at this answer.' : 'Picked by an admin for this dataset.');
     } else {
@@ -1895,9 +1915,11 @@ function libGroup(title, items) {
   return box;
 }
 
-// The Questions list, above the box.
+// The Questions panel, opened from the top bar: a search box, Team and Mine, the team
+// questions filed under their topics, and a click puts a question in the box.
 function openLibrary() {
   if (!LIB) return;
+  closeShare();
   LIB_TAB = LIB_TAB || ((LIB.team || []).length ? 'team' : 'mine');
   $('lib-pop').hidden = false;
   $('lib-btn').setAttribute('aria-expanded', 'true');
@@ -1918,21 +1940,44 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('lib-pop').hidden) { closeLibrary(); $('lib-btn').focus(); }
 });
+const topicOf = q => q.topic || 'Other';
+function libTopics() {
+  const counts = new Map();
+  (LIB.team || []).forEach(q => counts.set(topicOf(q), (counts.get(topicOf(q)) || 0) + 1));
+  return [...counts.keys()]
+    .sort((a, b) => (a === 'Other') - (b === 'Other') || a.localeCompare(b))
+    .map(t => [t, counts.get(t)]);
+}
 function renderLibrary() {
   const pop = $('lib-pop');
   if (pop.hidden || !LIB) return;
-  let head = pop.querySelector('.lib-head');
-  if (!head) {   // drawn once per opening, so the search box keeps its focus and words
-    head = el('div', 'lib-head');
+  let top = pop.querySelector('.lib-top');
+  if (!top) {   // drawn once per opening, so the search box keeps its focus and words
+    top = el('div', 'lib-top');
+    const h = el('h3', null, 'Questions');
+    h.appendChild(el('small', null, DATASET_NAME));
+    const tabs = el('div', 'lib-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Which questions');
+    const x = el('button', 'lib-x'); x.type = 'button'; x.innerHTML = X_ICON; x.setAttribute('aria-label', 'Close');
+    x.onclick = () => closeLibrary();
+    top.append(h, tabs, x);
+    const search = el('div', 'lib-search');
     const find = el('input', 'lib-find'); find.type = 'search';
-    find.placeholder = 'Find a question'; find.setAttribute('aria-label', 'Find a question');
+    find.placeholder = 'Find a question, a topic or a word'; find.setAttribute('aria-label', 'Find a question');
     find.value = LIB_FIND;
     find.oninput = () => { LIB_FIND = find.value; renderLibraryList(); };
-    const tabs = el('div', 'lib-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Which questions');
-    head.append(find, tabs);
-    pop.append(head, el('div', 'lib-list'), el('div', 'lib-foot', 'Click a question to put it in the box. Change it if you like, then press Enter.'));
+    search.appendChild(find);
+    const main = el('div', 'lib-main');
+    const nav = el('nav', 'lib-nav'); nav.setAttribute('aria-label', 'Topics');
+    main.append(nav, el('div', 'lib-list'));
+    const foot = el('div', 'lib-foot');
+    foot.appendChild(el('span', null, 'Click a question to put it in the box. Change it if you like, then press Enter.'));
+    if (LIB.admin) {
+      const a = el('a', null, 'Manage team questions'); a.href = 'usage?view=questions'; a.target = '_blank'; a.rel = 'noopener';
+      foot.appendChild(a);
+    }
+    pop.append(top, search, main, foot);
   }
-  const tabs = head.querySelector('.lib-tabs');
+  const tabs = top.querySelector('.lib-tabs');
   tabs.textContent = '';
   [['team', 'Team', LIB.team], ['mine', 'Mine', LIB.mine]].forEach(([k, label, items]) => {
     const b = el('button', null, label + ' · ' + (items || []).length); b.type = 'button';
@@ -1940,21 +1985,43 @@ function renderLibrary() {
     b.onclick = () => { LIB_TAB = k; renderLibrary(); };
     tabs.appendChild(b);
   });
+  renderLibraryNav();
   renderLibraryList();
 }
+function renderLibraryNav() {
+  const nav = $('lib-pop').querySelector('.lib-nav');
+  if (!nav || !LIB) return;
+  nav.textContent = '';
+  nav.hidden = LIB_TAB !== 'team' || !(LIB.team || []).length;
+  if (nav.hidden) return;
+  const topics = libTopics();
+  if (LIB_TOPIC && !topics.some(([t]) => t === LIB_TOPIC)) LIB_TOPIC = '';
+  const add = (key, label, n) => {
+    const b = el('button'); b.type = 'button';
+    b.append(el('span', null, label), el('span', 'n', String(n)));
+    b.setAttribute('aria-pressed', String(LIB_TOPIC === key));
+    b.onclick = () => { LIB_TOPIC = key; renderLibraryNav(); renderLibraryList(); };
+    nav.appendChild(b);
+  };
+  add('', 'All topics', (LIB.team || []).length);
+  topics.forEach(([t, n]) => add(t, t, n));
+}
 function libNote(text, isError) {
-  const foot = $('lib-pop').querySelector('.lib-foot');
+  const foot = $('lib-pop').querySelector('.lib-foot span');
   if (!foot) return;
   foot.textContent = text;
-  foot.classList.toggle('err', !!isError);
+  foot.parentNode.classList.toggle('err', !!isError);
 }
 function renderLibraryList() {
   const list = $('lib-pop').querySelector('.lib-list');
   if (!list || !LIB) return;
   list.textContent = '';
+  list.scrollTop = 0;
   const words = LIB_FIND.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const all = (LIB_TAB === 'team' ? LIB.team : LIB.mine) || [];
-  const items = all.filter(q => words.every(w => ((q.name || '') + ' ' + q.text).toLowerCase().includes(w)));
+  let items = all.filter(q => words.every(w => ((q.name || '') + ' ' + q.text + ' ' + (q.topic || '')).toLowerCase().includes(w)));
+  // A search looks through every topic; otherwise the topic picked on the left.
+  if (LIB_TAB === 'team' && LIB_TOPIC && !words.length) items = items.filter(q => topicOf(q) === LIB_TOPIC);
   if (!items.length) {
     list.appendChild(el('div', 'lib-empty', all.length ? 'No question matches.'
       : LIB_TAB === 'team' ? 'No team questions for this dataset yet. ' + (LIB.admin
@@ -1962,27 +2029,38 @@ function renderLibraryList() {
       : 'Nothing saved yet. Use Save question under an answer to keep a question here.'));
     return;
   }
-  items.forEach(q => list.appendChild(libItem(q)));
+  const grid = () => { const g = el('div', 'lib-grid'); list.appendChild(g); return g; };
+  if (LIB_TAB === 'team' && !LIB_TOPIC && !words.length) {
+    libTopics().forEach(([t]) => {    // all topics: one section each
+      const qs = items.filter(q => topicOf(q) === t);
+      if (!qs.length) return;
+      list.appendChild(el('div', 'lib-sec', t));
+      const g = grid(); qs.forEach(q => g.appendChild(libCard(q, false)));
+    });
+    return;
+  }
+  const g = grid(); items.forEach(q => g.appendChild(libCard(q, !!words.length)));
 }
-function libItem(q) {
-  const item = el('div', 'lib-item');
+function libCard(q, showTopic) {
+  const card = el('div', 'lib-card');
   const pick = el('button', 'pick'); pick.type = 'button';
   if (q.name) pick.appendChild(el('span', 'nm', q.name));
   pick.appendChild(el('span', 'tx', q.text));
-  const meta = libMeta(q);
+  const meta = libMeta(q, showTopic);
   if (meta) pick.appendChild(meta);
   pick.onclick = () => pickQuestion(q);
-  item.appendChild(pick);
-  if (q.kind === 'mine') item.appendChild(libActions(item, q));
-  return item;
+  card.appendChild(pick);
+  if (q.kind === 'mine') card.appendChild(libActions(card, q));
+  return card;
 }
-function libMeta(q) {
+function libMeta(q, showTopic) {
   const m = el('span', 'mt'), bits = [];
   if (q.kind === 'team') {
     if (q.checked) m.appendChild(el('span', 'ok', '✓ Checked ' + shortDate(q.checked)));
     else if (q.review) { m.classList.add('review'); m.textContent = 'An admin is looking at this answer'; }
     else if (q.no_number) m.textContent = 'A list or a chart, so no single number to check';
-    if (q.pinned) bits.push('pinned');
+    if (showTopic && q.topic) bits.push(q.topic);
+    if (q.pinned) bits.push('on the new chat page');
   } else {
     bits.push(q.uses ? 'asked ' + plural(q.uses, 'time', 'times') : 'saved ' + shortDate(q.created));
     if (q.suggested) bits.push('suggested for the team');
@@ -1991,21 +2069,23 @@ function libMeta(q) {
   return m.textContent ? m : null;
 }
 function pickQuestion(q) {
-  if (qBox.disabled) return;
+  // A conversation one cannot write in (shared read-only, expired): the question goes
+  // to a new chat instead.
+  if (qBox.disabled) newChat();
   qBox.value = q.text;
   LIB_PICK = { id: q.id, text: q.text };
   closeLibrary(); autosize(); updateComposer();
   qBox.focus();
   try { qBox.setSelectionRange(qBox.value.length, qBox.value.length); } catch (_) {}
 }
-function libActions(item, q) {
+function libActions(card, q) {
   const row = el('div', 'lib-acts');
   const add = (label, title, fn) => {
     const b = el('button', 'mini-btn', label); b.type = 'button'; b.title = title;
     b.onclick = e => { e.stopPropagation(); fn(b); };
     row.appendChild(b);
   };
-  add('Edit', 'Change its name or its words', () => item.replaceWith(libEditor(q)));
+  add('Edit', 'Change its name or its words', () => card.replaceWith(libEditor(q)));
   add('Delete', 'Remove it from your questions', () => {
     const c = el('div', 'lib-confirm');
     c.appendChild(el('span', null, 'Delete this saved question?'));
@@ -2078,16 +2158,25 @@ function saveForm(turn) {
   const name = el('input'); name.type = 'text'; name.placeholder = 'A short name, if you like'; name.maxLength = 120;
   const text = el('textarea'); text.rows = 2; text.maxLength = 1000; text.value = turn.q;
   form.append(field('Name (optional)', name), field('Question', text));
-  let team = null, pin = null;
+  let team = null, pin = null, topic = null;
   if (LIB && LIB.admin) {
     const box = el('div', 'admin-box');
     box.appendChild(el('span', 'who-tag', 'Admins only'));
     team = tick('Also add it to Team questions for ' + DATASET_NAME);
     const exp = el('div', 'exp');
+    // its topic in the Questions panel: one of the dataset's topics, or a new one
+    topic = el('input'); topic.type = 'text'; topic.maxLength = 40; topic.placeholder = 'For example: Medications';
+    const listId = 'lib-topics-' + turn.id;
+    topic.setAttribute('list', listId);
+    const dl = document.createElement('datalist'); dl.id = listId;
+    [...new Set((LIB.team || []).map(q => q.topic).filter(Boolean))].sort()
+      .forEach(t => { const o = document.createElement('option'); o.value = t; dl.appendChild(o); });
+    const topicField = field('Topic', topic);
+    topicField.appendChild(dl);
     pin = tick('Pin it to the new chat page');
-    exp.hidden = pin.wrap.hidden = true;
-    team.input.onchange = () => { exp.hidden = pin.wrap.hidden = !team.input.checked; };
-    box.append(team.wrap, exp, pin.wrap);
+    exp.hidden = topicField.hidden = pin.wrap.hidden = true;
+    team.input.onchange = () => { exp.hidden = topicField.hidden = pin.wrap.hidden = !team.input.checked; };
+    box.append(team.wrap, exp, topicField, pin.wrap);
     form.appendChild(box);
     loadExpected(turn, exp);
   }
@@ -2109,6 +2198,7 @@ function saveForm(turn) {
     ok.disabled = true; msg.textContent = 'Saving…';
     const r = await libPost('save', { dataset: DATASET, text: text.value, name: name.value,
                                       team: !!(team && team.input.checked), pinned: !!(pin && pin.input.checked),
+                                      topic: topic ? topic.value : '',
                                       trace: turn.trace && turn.trace.id, confirm: confirmed });
     ok.disabled = false; msg.textContent = '';
     if (r.ok === false && r.confirm) {

@@ -14,7 +14,8 @@ Three kinds of question:
 
     mine        one person's own, seen by them alone
     team        an admin's pick for a dataset, seen by everyone who may open that
-                dataset; "active" or "retired"; may be pinned to the new chat page
+                dataset; "active" or "retired"; may be pinned to the new chat page, and
+                filed under a topic (Conditions, Medications, ...) in the Questions panel
     suggestion  a person's own question offered to the admins; "open", "added" or
                 "dismissed"
 
@@ -35,6 +36,7 @@ from pathlib import Path
 
 MAX_TEXT = 1000          # characters in a question
 MAX_NAME = 120           # characters in its name
+MAX_TOPIC = 40           # characters in a team question's topic
 MAX_MINE = 300           # saved questions per person and dataset
 MAX_TEAM = 200           # team questions per dataset, retired ones included
 
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS questions (
     dataset TEXT NOT NULL,
     name TEXT,
     text TEXT NOT NULL,
+    topic TEXT,
     created TEXT, updated TEXT,
     pinned INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'active',
@@ -73,6 +76,10 @@ CREATE TABLE IF NOT EXISTS question_uses (
 );
 CREATE INDEX IF NOT EXISTS question_uses_question ON question_uses (question);
 """
+
+# Columns added after a library file was first made: CREATE TABLE IF NOT EXISTS leaves an
+# old table as it was, so each is added when missing.
+_ADDED = {"questions": {"topic": "TEXT"}}
 
 _lock = threading.Lock()
 _ready: set[str] = set()
@@ -121,6 +128,11 @@ def _connect() -> sqlite3.Connection:
                 except OSError:
                     pass
                 con.executescript(_SCHEMA)
+                for table, cols in _ADDED.items():
+                    have = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+                    for col, typ in cols.items():
+                        if col not in have:
+                            con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
                 try:
                     p.chmod(0o600)
                 except OSError:
@@ -162,6 +174,10 @@ def clean_text(text) -> str:
 
 def clean_name(name) -> str:
     return " ".join(str(name or "").split())[:MAX_NAME]
+
+
+def clean_topic(topic) -> str:
+    return " ".join(str(topic or "").split())[:MAX_TOPIC]
 
 
 def _norm(text) -> str:
@@ -292,6 +308,7 @@ def public(q: dict | None) -> dict | None:
                    suggested=bool(q.get("suggested")))
     elif q["kind"] == "team":
         out["pinned"] = bool(q.get("pinned"))
+        out["topic"] = q.get("topic") or ""
         status = q.get("check_status")
         if status == "matched" and q.get("expected"):
             out["checked"] = q.get("check_at")
@@ -307,7 +324,7 @@ def admin_view(q: dict | None) -> dict | None:
     if not q:
         return None
     out = {k: q.get(k) for k in (
-        "id", "kind", "owner", "dataset", "name", "text", "created", "updated", "status", "origin",
+        "id", "kind", "owner", "dataset", "name", "text", "topic", "created", "updated", "status", "origin",
         "expected", "expected_level", "expected_at", "expected_by", "check_status", "check_value",
         "check_level", "check_at", "check_by", "check_trace", "check_thread", "check_note", "check_state",
         "handled_by", "handled_at", "uses", "people", "last_used")}
@@ -339,23 +356,27 @@ def save_mine(user: str, dataset: str, text: str, name: str = "") -> dict:
 
 def add_team(actor: str, dataset: str, text: str, name: str = "", pinned: bool = False,
              expected: str | None = None, expected_level: str | None = None,
-             trace: str | None = None, thread: str | None = None, origin: str | None = None) -> dict:
+             trace: str | None = None, thread: str | None = None, origin: str | None = None,
+             topic: str = "") -> dict:
     """Make a team question. With `expected` (the main number of an answer the admin
     looked at, "" for an answer with no single number) it starts out checked by them."""
-    text, name = clean_text(text), clean_name(name)
+    text, name, topic = clean_text(text), clean_name(name), clean_topic(topic)
     if not text:
         raise ValueError("Write the question first.")
     for r in _q("SELECT * FROM questions WHERE kind = 'team' AND dataset = ? AND status = 'active'", (dataset,)):
         if _norm(r["text"]) == _norm(text):
             if pinned and not r.get("pinned"):
                 _x("UPDATE questions SET pinned = 1, updated = ? WHERE id = ?", (now(), r["id"]))
+            if topic and not r.get("topic"):
+                _x("UPDATE questions SET topic = ?, updated = ? WHERE id = ?", (topic, now(), r["id"]))
             return get(r["id"])
     n = _q("SELECT COUNT(*) AS n FROM questions WHERE kind = 'team' AND dataset = ?", (dataset,))[0]["n"]
     if n >= MAX_TEAM:
         raise ValueError(f"This dataset has {MAX_TEAM} team questions. Delete retired ones first.")
     qid, t = _new_id(), now()
-    _x("INSERT INTO questions (id, kind, owner, dataset, name, text, created, updated, pinned, origin) "
-       "VALUES (?, 'team', ?, ?, ?, ?, ?, ?, ?, ?)", (qid, actor, dataset, name, text, t, t, 1 if pinned else 0, origin))
+    _x("INSERT INTO questions (id, kind, owner, dataset, name, text, topic, created, updated, pinned, origin) "
+       "VALUES (?, 'team', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+       (qid, actor, dataset, name, text, topic, t, t, 1 if pinned else 0, origin))
     if expected is not None:
         _x("UPDATE questions SET expected = ?, expected_level = ?, expected_at = ?, expected_by = ?, "
            "check_status = ?, check_value = ?, check_level = ?, check_at = ?, check_by = ?, "
@@ -381,7 +402,7 @@ def suggest(user: str, qid: str) -> dict:
     return get(sid)
 
 
-def edit(qid: str, *, name=None, text=None, pinned=None) -> dict:
+def edit(qid: str, *, name=None, text=None, pinned=None, topic=None) -> dict:
     """Change a question's name, words or pin. New words on a team question clear its
     checked mark: the expected answer was for the old words, and the next check says
     whether it still holds."""
@@ -404,6 +425,9 @@ def edit(qid: str, *, name=None, text=None, pinned=None) -> dict:
     if pinned is not None and q["kind"] == "team":
         sets.append("pinned = ?")
         args.append(1 if pinned else 0)
+    if topic is not None and q["kind"] == "team":
+        sets.append("topic = ?")
+        args.append(clean_topic(topic))
     if sets:
         sets.append("updated = ?")
         args.append(now())

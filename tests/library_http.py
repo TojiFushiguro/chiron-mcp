@@ -47,7 +47,7 @@ ASK, DS = E.ASK, E.DS
 ONLY_ADMINS = "Only a Chiron superuser can manage team questions."
 NO_ACCESS = "You have no access to this dataset."
 # All the Ask page may ever get about a question: its words, and whether it is checked.
-PUBLIC_KEYS = {"id", "kind", "name", "text", "dataset", "pinned", "checked", "review", "no_number",
+PUBLIC_KEYS = {"id", "kind", "name", "text", "dataset", "pinned", "topic", "checked", "review", "no_number",
                "uses", "last_used", "created", "suggested"}
 IDENTITIES = {
     "lib_deid": ("deid", False),
@@ -81,6 +81,8 @@ def make_accounts() -> None:
     ds = models.Dataset.objects.filter(unique_id=DS).first()
     if ds is None:
         sys.exit(f"no dataset {DS!r} (TEST_DATASET)")
+    # reports left by an earlier run hold on to the accounts' rows below
+    models.UserCreatedContent.objects.filter(creator__user__username__in=list(IDENTITIES)).delete()
     for name, spec in IDENTITIES.items():
         user, _made = User.objects.get_or_create(username=name, defaults={"is_active": True})
         user.set_unusable_password()
@@ -101,9 +103,13 @@ def make_accounts() -> None:
 def remove_accounts() -> None:
     from django.contrib.auth import get_user_model
 
+    from chiron import models
     from chiron_mcp import library, usage
 
     names = list(IDENTITIES)
+    # reports the accounts saved (a --model run, or an earlier run with --keep): Chiron
+    # will not delete an account that still has them
+    models.UserCreatedContent.objects.filter(creator__user__username__in=names).delete()
     # The library file the server uses: the one the environment names, or the default,
     # which is the server's own when the test runs where the server does (its container).
     lib = library.path()
@@ -227,23 +233,25 @@ def run(model: bool) -> list[str]:
     check("a non-admin cannot read an expected answer", r.get("error") == ONLY_ADMINS, r)
 
     # team questions
-    r = post("lib_admin", "team", {"dataset": DS, "text": TEAM_Q, "name": "Type 2 diabetes", "pinned": True})
+    r = post("lib_admin", "team", {"dataset": DS, "text": TEAM_Q, "name": "Type 2 diabetes", "pinned": True,
+                                   "topic": "Conditions"})
     team_id = r.get("team_id")
     made += [team_id] if team_id else []
     check("an admin adds a pinned team question", r.get("ok") and team_id, r)
     for who in ("lib_deid", "lib_agg", "lib_admin2"):
         item = next((q for q in team(who) if q["id"] == team_id), None)
-        check(f"{who} sees it, pinned", item and item.get("pinned"), item)
+        check(f"{who} sees it, pinned, under its topic", item and item.get("pinned") and item.get("topic") == "Conditions", item)
         check(f"{who} gets its words only, never an expected answer", item and set(item) <= PUBLIC_KEYS, item)
     check("someone with no access to the dataset gets no team questions", not team("lib_none"))
     r = post("lib_deid", "edit", {"id": team_id, "pinned": False})
     check("a non-admin cannot change a team question", r.get("error") == ONLY_ADMINS, r)
     r = post("lib_agg", "delete", {"id": team_id})
     check("a non-admin cannot delete a team question", r.get("error") == ONLY_ADMINS, r)
-    r = post("lib_admin", "edit", {"id": team_id, "pinned": False, "view": "admin"})
+    r = post("lib_admin", "edit", {"id": team_id, "pinned": False, "topic": "Diabetes", "view": "admin"})
     row = next((q for q in r.get("team") or [] if q["id"] == team_id), {})
-    check("an admin unpins it, and gets the Admin page's view back", r.get("ok") and row and not row.get("pinned"), row)
-    post("lib_admin", "edit", {"id": team_id, "pinned": True})
+    check("an admin unpins it and moves it to another topic, and gets the Admin page's view back",
+          r.get("ok") and row and not row.get("pinned") and row.get("topic") == "Diabetes", row)
+    post("lib_admin", "edit", {"id": team_id, "pinned": True, "topic": "Conditions"})
 
     # words that may point at one person
     risky = "Show the visits of MRN 12345678"

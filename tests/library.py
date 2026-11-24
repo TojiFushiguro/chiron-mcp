@@ -10,6 +10,7 @@ Exit code 0 means every check held.
 """
 
 import os
+import sqlite3
 import sys
 import tempfile
 import time
@@ -41,7 +42,7 @@ def raises(fn) -> str | None:
 
 DS, OTHER = "synthea-small", "dataset1_stored"
 # What the Ask page may ever get about a question: words, and whether it is checked.
-PUBLIC_KEYS = {"id", "kind", "name", "text", "dataset", "pinned", "checked", "review", "no_number",
+PUBLIC_KEYS = {"id", "kind", "name", "text", "dataset", "pinned", "topic", "checked", "review", "no_number",
                "uses", "last_used", "created", "suggested"}
 
 # -- saved questions -----------------------------------------------------------------------
@@ -161,6 +162,17 @@ for text, hit in [("How many patients have type 2 diabetes?", False),
     got = L.identifying(text)
     check(f"identifying({text!r})", bool(got) == hit, got)
 
+# -- topics --------------------------------------------------------------------------------------------------
+tq = L.add_team("admin", DS, "How many patients take metformin?", "Metformin", topic="  Medications  ")
+check("a team question keeps a clean topic, and the page gets it",
+      tq["topic"] == "Medications" and L.public(tq)["topic"] == "Medications", L.public(tq))
+check("the same question added again with a topic it lacked takes it",
+      L.add_team("admin", DS, t3["text"], topic="Conditions")["topic"] == "Conditions")
+check("an admin moves a question to another topic", L.edit(tq["id"], topic="Drugs")["topic"] == "Drugs")
+check("a saved question has no topic", L.edit(a["id"], topic="X")["topic"] is None and "topic" not in L.public(L.get(a["id"])))
+check("a long topic is cut to the limit",
+      len(L.add_team("admin", DS, "Patients by county", topic="x" * 99)["topic"]) == L.MAX_TOPIC)
+
 # -- deleting, and test accounts ------------------------------------------------------------------------------
 L.delete(b["id"])
 check("deleting a question deletes its use counts", L.get(b["id"]) is None and not L.uses([b["id"]]))
@@ -180,6 +192,21 @@ rows = {r["id"]: r for r in usage.summary(recent=10)["recent"]}
 check("a check's ledger row says it was a check", rows["c" * 32]["source"] == "check" and rows["d" * 32]["source"] == "live")
 check("average cost on a dataset (the last 30 days only)", abs((usage.average_cost(DS) or 0) - 0.03) < 1e-9, usage.average_cost(DS))
 check("average cost anywhere when a dataset has none", abs((usage.average_cost("empty") or 0) - 0.16 / 3) < 1e-9)
+
+# -- a library file made before topics ----------------------------------------------------------------------
+OLD = os.path.join(TMP, "old.sqlite")
+con = sqlite3.connect(OLD)
+con.executescript("""CREATE TABLE questions (id TEXT PRIMARY KEY, kind TEXT NOT NULL, owner TEXT NOT NULL,
+  dataset TEXT NOT NULL, name TEXT, text TEXT NOT NULL, created TEXT, updated TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', origin TEXT, expected TEXT,
+  expected_level TEXT, expected_at TEXT, expected_by TEXT, check_status TEXT, check_value TEXT,
+  check_level TEXT, check_at TEXT, check_by TEXT, check_trace TEXT, check_thread TEXT, check_note TEXT,
+  check_state TEXT, handled_by TEXT, handled_at TEXT);
+INSERT INTO questions (id, kind, owner, dataset, text) VALUES ('00112233445566ff', 'team', 'admin', 'ds', 'Old one');""")
+con.close()
+os.environ["CHIRON_MCP_QUESTIONS_DB"] = OLD
+check("a library file made before topics gains the column, and its questions keep working",
+      L.public(L.get("00112233445566ff")).get("topic") == "" and L.edit("00112233445566ff", topic="T")["topic"] == "T")
 
 # -- off --------------------------------------------------------------------------------------------------------
 os.environ["CHIRON_MCP_QUESTIONS_DB"] = "off"

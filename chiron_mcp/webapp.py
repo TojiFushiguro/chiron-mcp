@@ -3186,11 +3186,11 @@ class Handler(BaseHTTPRequestHandler):
                         admin: bool) -> dict:
         """One change to the library, by `who`:
 
-            save     {dataset, text, name?, team?, pinned?, trace?, confirm?}   anyone; team: admins
-            edit     {id, name?, text?, pinned?, confirm?}  one's own; a team question: admins
+            save     {dataset, text, name?, team?, pinned?, topic?, trace?, confirm?}   anyone; team: admins
+            edit     {id, name?, text?, pinned?, topic?, confirm?}  one's own; a team question: admins
             delete   {id}                                    one's own; team and suggestions: admins
             suggest  {id}                                    offer one's own to the admins
-            team     {dataset, text, name?, pinned?, from?, confirm?}   admins: add a team question
+            team     {dataset, text, name?, pinned?, topic?, from?, confirm?}   admins: add a team question
             status   {id, status}                            admins: retire, restore, dismiss
             check    {id} or {dataset, all: true}            admins: ask again, in the background
             keep     {id}                                    admins: the last check's number is expected
@@ -3247,7 +3247,7 @@ class Handler(BaseHTTPRequestHandler):
                     level, trace_id, thread = data.get("access_level"), data.get("id"), data.get("thread")
                 out["team_id"] = library.add_team(
                     who, dataset, text, name, pinned=bool(body.get("pinned")), expected=expected,
-                    expected_level=level, trace=trace_id, thread=thread)["id"]
+                    expected_level=level, trace=trace_id, thread=thread, topic=body.get("topic") or "")["id"]
         elif action == "edit":
             text = body.get("text")
             if q["kind"] == "team" and text is not None and library.clean_text(text) != q["text"]:
@@ -3255,7 +3255,8 @@ class Handler(BaseHTTPRequestHandler):
                 if stop:
                     return stop
             library.edit(q["id"], name=body.get("name"), text=text,
-                         pinned=body.get("pinned") if q["kind"] == "team" else None)
+                         pinned=body.get("pinned") if q["kind"] == "team" else None,
+                         topic=body.get("topic") if q["kind"] == "team" else None)
         elif action == "delete":
             library.delete(q["id"])
             if q["kind"] == "team":
@@ -3273,7 +3274,8 @@ class Handler(BaseHTTPRequestHandler):
             if stop:
                 return stop
             out["team_id"] = library.add_team(who, dataset, text, name, pinned=bool(body.get("pinned")),
-                                              origin=src["id"] if src else None)["id"]
+                                              origin=src["id"] if src else None,
+                                              topic=body.get("topic") or "")["id"]
             if src:
                 library.set_status(src["id"], "added", who)
         elif action == "status":

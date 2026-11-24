@@ -130,9 +130,10 @@ What the Ask tab does:
   ledger with one row per answer and no question text,
   kept for good. See [The usage page](#the-usage-page).
 - **A question library**: "Save question" under an answer keeps it in the person's own
-  list (the **Questions** button at the left of the question box), to ask again. A
-  superuser picks **Team questions** for a dataset, which everyone on it sees first on the
-  new chat page, and checks from the Admin page that Ask still gives each one's expected
+  list, to ask again; the **Questions** button in the top bar (beside Share and Export
+  PDF) opens it in a large panel. A superuser picks **Team questions** for a dataset,
+  filed under topics, which everyone on it sees there (and the pinned ones first on the
+  new chat page), and checks from the Admin page that Ask still gives each one's expected
   answer. Only the words are kept, never an answer. See
   [The question library](#the-question-library).
 
@@ -1177,14 +1178,19 @@ its dataset, who saved it and when, and how often it was asked from the library.
 answer, a result or anything about a patient.
 
 **Saved questions.** "Save question" under an answer (beside Trace and Report a problem)
-keeps it, with a name if wanted, in the person's own list: the **Questions** button at the
-left of the question box opens it (Team and Mine tabs, a search box), and a click puts the
-question in the box to change or send. A follow-up ("of these, how many are women?") is
+keeps it, with a name if wanted, in the person's own list. The **Questions** button in the
+top bar, beside Share and Export PDF (on a new chat too), opens a large panel: a search
+box, Team and Mine, and the team questions filed under their topics in a list on the
+left; a click puts the question in the box to change or send. A follow-up ("of these, how many are women?") is
 flagged: a saved question is asked on its own, so it should be written out in full. Each
 person sees only their own; they can edit, delete, or **suggest** one for the team.
 
 **Team questions.** A superuser adds them on the Admin page's **Team questions** tab
-(typed in, or from a suggestion), or from Save question under one of their own answers.
+(typed in, or from a suggestion), or from Save question under one of their own answers,
+each with an optional topic (Conditions, Medications, Time between events, ...).
+`scripts/team_questions.py --dataset <id> --owner <username>` loads a starter set of 31
+for a Synthea dataset in nine topics, four of them pinned; run it in the Ask container,
+then press Check all now.
 Everyone who may open the dataset sees them, at any level: pinned ones (up to four) first
 on the new chat page, all of them in the Questions list. Asking one is an ordinary
 question at the person's own access level, so an aggregate-only account still gets small
