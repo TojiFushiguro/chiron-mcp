@@ -219,7 +219,8 @@ def unmasked_small(text: str) -> list[str]:
 
 
 REFUSED = re.compile(E.REFUSAL.pattern + r"|granted access|not been granted|been given access|no chiron user|can.t open|cannot open|"
-                     r"not available to you|isn.t available|no [a-z ]{0,24}access|not able to", re.I)
+                     r"not available to you|isn.t available|no [a-z ]{0,24}access|not able to|"
+                     r"not accessible|isn.t accessible|can.t answer|cannot answer", re.I)
 
 
 def warn(label: str, cond: bool, detail: str = "") -> None:

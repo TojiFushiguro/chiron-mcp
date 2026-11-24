@@ -20,9 +20,9 @@ ledger marks it as a check.
     .venv/bin/python tests/library_http.py            # --model, --keep
 
 Needs the server's CHIRON_MCP_* database settings in the environment (sessions and the
-accounts are made in-process), like tests/permissions.py; with the server's
-CHIRON_MCP_QUESTIONS_DB (or CHIRON_MCP_STATE_DIR) too, the run also removes the test
-accounts' suggestions from the library file.
+accounts are made in-process), like tests/permissions.py. Run where the server runs
+(its container), or with its CHIRON_MCP_QUESTIONS_DB or CHIRON_MCP_STATE_DIR, the run
+also removes the test accounts' suggestions from the library file.
 
 Exit code 0 means every check held.
 """
@@ -104,7 +104,10 @@ def remove_accounts() -> None:
     from chiron_mcp import library, usage
 
     names = list(IDENTITIES)
-    left = library.delete_users(names) if (library.setting() or os.environ.get("CHIRON_MCP_STATE_DIR")) else 0
+    # The library file the server uses: the one the environment names, or the default,
+    # which is the server's own when the test runs where the server does (its container).
+    lib = library.path()
+    left = library.delete_users(names) if lib is not None and lib.exists() else 0
     rows = usage.delete_users(names)
     get_user_model().objects.filter(username__in=names).delete()
     print(f"removed {len(names)} accounts, {left} library row(s) and {rows} ledger row(s) of theirs")
