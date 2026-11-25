@@ -30,8 +30,11 @@
     background: var(--bg); border-bottom: 1px solid var(--line-2); position: sticky; top: 0; z-index: 5;
   }
   .brand { display: flex; align-items: baseline; gap: 12px; }
-  .brand a { color: var(--muted); text-decoration: none; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
-  .brand a:hover { color: var(--ink); }
+  .brand a {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 7px; border-radius: 8px;
+    color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500;
+  }
+  .brand a:hover { color: var(--ink); background: var(--bg); }
   .tabs { display: flex; gap: 2px; height: 100%; }
   .tabs button {
     border: 0; background: none; padding: 0 12px; font-size: 13.5px; color: var(--muted); cursor: pointer;
@@ -214,7 +217,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><a href="../" id="back" title="Back to the dataset list" aria-label="Back to the dataset list">←</a></div>
+  <div class="brand"><a href="../" id="back" title="Back to the dataset list"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>Datasets</a></div>
   <nav class="tabs" id="tabs" role="tablist">
     <button type="button" role="tab" data-view="usage" aria-selected="true">Usage</button>
     <button type="button" role="tab" data-view="access" aria-selected="false" class="hide" id="tab-access">People</button>
@@ -356,7 +359,24 @@ function when(iso) {
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
-function shortModel(m) { return (m || '–').replace(/^us\.anthropic\./, '').replace(/^claude-/, ''); }
+// A model's name as people say it ("Haiku 5.5"); another server's model keeps its own id.
+function shortModel(m) {
+  const x = /claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/.exec(m || '');
+  return x ? x[1][0].toUpperCase() + x[1].slice(1) + ' ' + x[2] + '.' + x[3]
+           : (m || '–').replace(/^us\.anthropic\./, '').replace(/^claude-/, '');
+}
+// A dataset's name where this page knows it (datasets the viewer may open), else its id.
+let DSNAMES = {};
+function dsName(id) {
+  if (!id) return '–';
+  const a = ACCESS_DATA && (ACCESS_DATA.datasets || []).find(x => x.id === id);
+  return DSNAMES[id] || (a && a.name) || id;
+}
+// The spend axis: every line with the same decimals, set by the largest ($0.000 to $0.040).
+function moneyTick(v, ticks) {
+  const top = Math.max(0, ...ticks.map(t => Math.abs(t.value)));
+  return '$' + v.toFixed(top >= 1 ? 2 : top >= 0.01 ? 3 : 4);
+}
 function person(u) { const p = PEOPLE[u]; return p && p.name ? p.name : (u || '–'); }
 function table(headers, rows) {
   const t = el('table'), thead = el('thead'), tr = el('tr');
@@ -445,7 +465,7 @@ function renderFlags(d) {
     by.append(document.createTextNode('by '), el('b', '', p.name || f.user || '–'));
     if (p.name) by.title = f.user;
     head.appendChild(by);
-    head.appendChild(el('span', 'dim', when(f.at) + ' · ' + (f.dataset || '–') + (f.model ? ' · ' + shortModel(f.model) : '')));
+    head.appendChild(el('span', 'dim', when(f.at) + ' · ' + dsName(f.dataset) + (f.model ? ' · ' + shortModel(f.model) : '')));
     const btn = el('button', 'btn small', f.status === 'handled' ? 'Reopen' : 'Mark handled'); btn.type = 'button';
     btn.onclick = async () => {
       btn.disabled = true;
@@ -498,7 +518,7 @@ function renderChart(d) {
       } } },
       scales: {
         x: { grid: { display: false }, ticks: { color: '#6b7780', maxRotation: 0, autoSkip: true, font: { size: 11 } } },
-        y: { beginAtZero: true, grid: { color: '#eef1f3' }, border: { display: false }, ticks: { color: '#6b7780', font: { size: 11 }, callback: v => money(v) } },
+        y: { beginAtZero: true, grid: { color: '#eef1f3' }, border: { display: false }, ticks: { color: '#6b7780', font: { size: 11 }, callback: (v, i, ticks) => moneyTick(v, ticks) } },
       },
     },
   });
@@ -525,7 +545,7 @@ function renderBreakdown(d) {
   const models = d.per_model || [], datasets = d.per_dataset || [];
   if (!models.length && !datasets.length) { box.appendChild(el('div', 'empty', 'Nothing yet.')); return; }
   box.appendChild(bars('By model', models, 'model', shortModel));
-  box.appendChild(bars('By dataset', datasets, 'dataset', x => x || '–'));
+  box.appendChild(bars('By dataset', datasets, 'dataset', dsName));
 }
 
 function renderPeople(d) {
@@ -563,7 +583,7 @@ function renderRecent(d) {
     const tr = el('tr');
     tr.appendChild(cell(when(r.ended), 'dim'));
     if (d.everyone) tr.appendChild(cell(person(r.user)));
-    const ds = cell(r.dataset); ds.title = r.access_level ? (ACCESS[r.access_level] || r.access_level) + (r.followup ? ', follow-up #' + r.turn : '') : '';
+    const ds = cell(dsName(r.dataset)); ds.title = r.access_level ? (ACCESS[r.access_level] || r.access_level) + (r.followup ? ', follow-up #' + r.turn : '') : '';
     tr.appendChild(ds);
     tr.appendChild(cell(shortModel(r.model)));
     const st = r.status || '–';
@@ -775,7 +795,7 @@ function renderChanges() {
       tr.appendChild(cell(when(ch.at), 'dim'));
       tr.appendChild(cell(person(ch.actor)));
       tr.appendChild(cell(person(ch.username)));
-      tr.appendChild(cell(ch.dataset || '–', 'dim'));
+      tr.appendChild(cell(dsName(ch.dataset), 'dim'));
       tr.appendChild(cell(ch.change));
       return tr;
     })));
@@ -1078,6 +1098,7 @@ function renderError(msg) {
 function render(d) {
   renderWho(d);
   if (!d || d.error) { renderError((d && d.error) || 'The usage data could not be read.'); return; }
+  DSNAMES = d.dataset_names || {};
   const custom = PERIOD.includes('..');
   document.querySelectorAll('#periods button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.period === PERIOD || (custom && b.dataset.period === 'custom'))));
   $('range').classList.toggle('hide', !custom && $('range').dataset.open !== '1');

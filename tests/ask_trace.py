@@ -124,6 +124,17 @@ def main() -> int:
     check("a count's outcome reads as patients", tools[2]["summary"] == "841 patients", tools[2]["summary"])
     check("a tool's error marks the step", tools[3]["status"] == "error", tools[3]["summary"])
     check("Chiron's description is plain text", tools[1]["describe"] == "Subject has\nasthma", tools[1]["describe"])
+    # Step names read as sentences, with a verb for every tool; the page reads traces saved
+    # before 2026-11-25 ("Model #1 → looking up values") the same way (OLD_VERBS in index.html).
+    check("a model step says what it did", models[0]["label"] == "Model call 1: looks up values", models[0]["label"])
+    check("the same tool twice in one step is named once", models[2]["label"] == "Model call 3: counts patients", models[2]["label"])
+    check("every tool has a verb", set(T.TOOL_VERBS) == set(T.TOOL_LABELS), set(T.TOOL_VERBS) ^ set(T.TOOL_LABELS))
+    import re as _re
+    page = (Path(__file__).resolve().parent.parent / "chiron_mcp" / "webui" / "index.html").read_text()
+    old_verbs = dict(_re.findall(r"'([a-z -]+)': '([^']+)'", page.split("const OLD_VERBS = {", 1)[1].split("};", 1)[0]))
+    check("old traces' step names read like new ones",
+          all(old_verbs.get(T.TOOL_LABELS[k].lower()) == T.TOOL_VERBS[k] for k in T.TOOL_LABELS),
+          [k for k in T.TOOL_LABELS if old_verbs.get(T.TOOL_LABELS[k].lower()) != T.TOOL_VERBS[k]])
     check("a retry becomes a step", any(s["kind"] == "retry" for s in steps))
     check("stats add up", snap["stats"]["tool_calls"] == 4 and snap["stats"]["model_calls"] == 4, snap["stats"])
     check("a new conversation's cost is all its own", snap["stats"]["cost_usd"] == 0.05)

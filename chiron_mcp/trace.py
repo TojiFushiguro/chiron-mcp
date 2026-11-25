@@ -59,6 +59,19 @@ TOOL_LABELS = {
     "column_options": "Checking column options",
 }
 
+# What a model call chose, as a verb: "Model call 1: finds variables, counts patients".
+TOOL_VERBS = {
+    "query": "asks Chiron", "datasets": "checks access", "find_concepts": "finds variables",
+    "describe_concept": "reads a variable", "concept_values": "looks up values",
+    "edit_cohort": "builds filters", "event_rule_options": "checks date rules",
+    "count_cohort": "counts patients", "run_table": "pulls rows", "export_table": "exports",
+    "crosstab": "cross-tabulates", "breakdown": "breaks down", "saved_reports": "reads reports",
+    "run_saved_report": "runs a report", "open_in_ui": "saves to Chiron",
+    "update_report": "updates the report", "delete_report": "deletes the report",
+    "results": "reads your results", "update_results": "updates your results",
+    "column_options": "checks column options",
+}
+
 # Tools that run a cohort the model hands them. Their cohort_def should always be one
 # Chiron produced (chiron_edit_cohort, a saved report, an earlier answer), never one the
 # model typed out.
@@ -751,7 +764,7 @@ class Trace:
         self._idle_since = None
         self._calls += 1
         self._model = self.step(
-            "model", label=f"Model #{self._calls}", t0=t0, call=self._calls,
+            "model", label=f"Model call {self._calls}", t0=t0, call=self._calls,
             thinking="", text=[], chose=[], usage=None, msg_id=None, thinking_tokens=None,
             ttft=None, stop_reason=None)
         return self._model
@@ -762,10 +775,10 @@ class Trace:
             return
         tools = m["chose"]
         if tools:
-            names = [TOOL_LABELS.get(t, t).lower() for t in tools]
-            m["label"] = f"Model #{m['call']} → " + ", ".join(dict.fromkeys(names))
+            names = [TOOL_VERBS.get(t) or TOOL_LABELS.get(t, t) for t in tools]
+            m["label"] = f"Model call {m['call']}: " + ", ".join(dict.fromkeys(names))
         elif m["text"]:
-            m["label"] = f"Model #{m['call']} → writes the answer"
+            m["label"] = f"Model call {m['call']}: writes the answer"
         bits = []
         if m.get("thinking"):
             bits.append("reasoned")

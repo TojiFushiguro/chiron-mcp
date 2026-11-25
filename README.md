@@ -82,7 +82,8 @@ What the Ask tab does:
   good (or for `CHIRON_MCP_THREAD_TTL_HOURS` idle hours when that is set) and lists a
   person's own, so they follow the person to any browser; one this browser has not seen
   is opened from the server. Under each answer, three suggested follow-ups; each new
-  chat offers six fresh starters, one per feature.
+  chat offers six fresh starters, one per feature, with topics above them (Counts,
+  Breakdowns, Charts, Results, Reports) that show the starters about one topic.
 - **Breakdowns** by one or two variables ("by gender", "by gender and race"): exact distinct
   patients per group and per cell, as a table and chart, with patients who have no recorded
   value called out so the table adds up.
@@ -111,10 +112,12 @@ What the Ask tab does:
   numbers, tables, callouts and "how it was counted" only when asked for. To change one,
   ask ("remove the race part", "add a short summary"): Ask writes a new version and says
   what changed. The dataset sits at the foot of each page, with the page number.
-- **A trace under every answer**, for finding out why one is wrong. **Trace** opens it.
-  It shows a timeline of each step
-  (start-up, every model call, every Chiron tool call, the server's checks), plus time,
-  tokens and cost. Below that, at three levels of detail (Summary, Detailed, Debug), it
+- **A trace under every answer**, for finding out why one is wrong. **Trace** opens it on
+  its numbers: total time, the model's time and calls, Chiron's time and calls, start-up,
+  the server's checks, tokens in and out, and cost, with a bar of where the time went.
+  Then what happened, the checks, and a timeline of each step (start-up, every model call,
+  every Chiron tool call, the server's checks; "Model call 1: finds variables"). Below
+  that, at three levels of detail (Summary, Detailed, Debug), it
   shows each step: the model's summarised reasoning, the exact input and output of each
   tool call, where each figure in the answer came from, and the raw stream. Checks point
   at the step where something went wrong:
@@ -126,11 +129,12 @@ What the Ask tab does:
 - **A call log** in the server's output: one line per model call and per Chiron call,
   with the user, dataset, model, tokens, cost, tool, status and time, so a conversation
   can be followed end to end with grep. See [The call log](#the-call-log).
-- **Who is asking**: opened on its own, the Ask page's top bar shows the person's name
-  and their access level on this dataset (full access, de-identified, aggregate only),
-  resolved the way every tool resolves them, so the bar states what the answers obey.
-  Inside the Chiron UI the bar stays empty: Chiron's own header and dataset page already
-  show the name, the dataset and the level. `/whoami` returns the same as
+- **Who is asking**: the Ask page resolves the person and their access level on this
+  dataset (full access, de-identified, aggregate only) the way every tool resolves them.
+  Its top bar keeps its room for the conversation and shows nothing about the account,
+  only a "Not signed in" warning when there is no Chiron session: inside the Chiron UI,
+  Chiron's own header and dataset page show the name, the dataset and the level.
+  `/whoami` returns the person, their datasets and their levels as
   JSON and, for a staff account, the names of the request headers that reach the server
   and the values of those that may carry a sign-on identity, so a deployment behind a
   sign-on gateway can see what it is sent before trusting any of it.

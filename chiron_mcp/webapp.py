@@ -2858,6 +2858,9 @@ class Handler(BaseHTTPRequestHandler):
             "filter_user": scope["user"], "filter_dataset": scope["dataset"],
             "ceiling": CONFIG.max_access_level, "chiron": CONFIG.ui_url,
             "user": {k: info.get(k) for k in ("username", "name", "email", "staff", "superuser")} if info else None,
+            # names for the datasets this person may open, so the page shows names, not ids
+            "dataset_names": {d["id"]: d["name"] for d in ((info or {}).get("datasets") or [])
+                              if d.get("id") and d.get("name")},
         })
         return self._json(out)
 

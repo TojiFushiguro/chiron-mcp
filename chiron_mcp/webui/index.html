@@ -78,9 +78,8 @@
     padding: 8px 34px 8px 10px; border-radius: 9px; color: var(--ink-2);
   }
   .chat-item .title {
-    display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: clip;
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    font-size: 13.5px; line-height: 1.35; overflow-wrap: anywhere;
   }
   .chat-item .meta { display: block; font-size: 11.5px; color: var(--faint); }
   .chat-item.expired .title { color: var(--muted); }
@@ -130,13 +129,16 @@
   .icon-btn:hover { background: var(--panel); }
   .menu-btn { display: none; }
   /* Share and Export, for the open conversation */
-  .top-tools { display: flex; gap: 6px; margin-left: auto; flex: none; position: relative; }
+  .top-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: none; position: relative; }
+  .top-menu { display: flex; align-items: center; gap: 6px; }
+  .top-more { display: none; }
   .top-btn {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2);
-    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; white-space: nowrap;
+    font-size: 13px; font-weight: 500; color: var(--ink-2);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px; cursor: pointer;
   }
-  .top-btn:hover { border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
-  .top-btn[aria-expanded="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+  .top-btn:hover { border-color: #cfd6db; background: var(--panel); color: var(--ink); }
+  .top-btn[aria-expanded="true"] { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-strong); }
   .popover {
     position: absolute; top: 40px; right: 0; z-index: 30; width: 320px; max-width: calc(100vw - 32px);
     background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
@@ -148,9 +150,12 @@
   .popover .rules b { font-weight: 600; color: var(--ink-2); }
   .popover .row { display: flex; gap: 6px; }
   .popover input {
-    flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 9px;
-    border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
+    flex: 1; min-width: 0; font: inherit; font-size: 13px; height: 32px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 9px; color: var(--ink); outline: 0;
   }
+  .popover input:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .popover .row .mini-btn { height: 32px; padding: 0 12px; border-radius: 9px; }
+  .popover label.cont input { height: auto; }
   .popover .people { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
   .popover .people li { display: flex; align-items: center; gap: 8px; }
   .popover .people li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -173,17 +178,25 @@
   /* reporting an answer */
   .feedback { font-size: 12px; color: var(--faint); }
   .flag-form {
-    margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel);
-    font-size: 13px; display: flex; flex-direction: column; gap: 8px; max-width: 560px;
+    margin-top: 2px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 14px; background: var(--panel);
+    font-size: 13px; display: flex; flex-direction: column; gap: 10px; max-width: 560px;
   }
-  .flag-form .kinds { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .flag-form > b { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .flag-form .kinds { display: flex; flex-wrap: wrap; gap: 8px; }
+  .flag-form .kinds button {
+    height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid var(--line); background: var(--bg);
+    font: inherit; font-size: 13px; color: var(--ink-2); cursor: pointer;
+  }
+  .flag-form .kinds button:hover { border-color: #cfd6db; }
+  .flag-form .kinds button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); font-weight: 500; }
   .flag-form label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
   .flag-form textarea {
-    font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
-    resize: vertical; min-height: 40px; background: var(--bg); color: var(--ink);
+    font: inherit; font-size: 13.5px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px;
+    resize: none; min-height: 64px; background: var(--bg); color: var(--ink); outline: 0;
   }
+  .flag-form textarea:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
   .flag-form small { color: var(--muted); font-size: 11.5px; }
-  .flag-form .row { display: flex; gap: 6px; align-items: center; }
+  .flag-form .row { display: flex; gap: 8px; align-items: center; }
   .chat-item .meta .by { color: var(--accent-strong); }
   /* read-only view of one conversation (Export PDF, shared links) */
   body.view-mode .sidebar, body.view-mode .composer-wrap, body.view-mode .menu-btn,
@@ -213,11 +226,14 @@
   .hero { text-align: center; padding: 8vh 0 0; }
   .hero h2 { margin: 0 0 6px; font-size: 22px; font-weight: 500; color: var(--ink); letter-spacing: -.01em; }
   .hero p { margin: 0 auto; max-width: 520px; color: var(--muted); font-size: 14.5px; }
-  .caps { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 16px 0 26px; }
+  .caps { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 18px 0 22px; }
   .cap {
-    font-size: 12px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line);
-    padding: 3px 10px; border-radius: 999px;
+    height: 30px; padding: 0 13px; border-radius: 15px; border: 1px solid var(--line); background: var(--bg);
+    font: inherit; font-size: 13px; color: var(--ink-2); cursor: pointer; transition: border-color .15s, background .15s;
   }
+  .cap:hover { border-color: #cfd6db; }
+  .cap[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-strong); }
+  .lib-label + .caps { justify-content: flex-start; margin: 0 0 12px; }
   .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; text-align: left; }
   .card {
     border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius);
@@ -385,7 +401,7 @@
   .chiron-link {
     display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
     background: var(--accent); color: #fff; text-decoration: none; border: 1px solid var(--accent);
-    padding: 7px 14px; border-radius: 9px; font-size: 13.5px; font-weight: 500;
+    height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; font-weight: 500; white-space: nowrap;
     transition: background .15s, border-color .15s;
   }
   .chiron-link:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
@@ -395,6 +411,8 @@
   .chiron-link.gone { background: var(--panel); color: var(--faint); border-color: var(--line); cursor: default; }
 
   .note { font-size: 12.5px; color: var(--muted); margin: 0 0 8px; }
+  .reopened { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--faint); cursor: default; }
+  .reopened svg { flex: none; }
   .followups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
   .followup {
     display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-align: left;
@@ -410,25 +428,29 @@
   }
 
   .to-bottom {
-    position: absolute; left: 50%; transform: translateX(-50%); bottom: 96px;
+    /* beside the column, clear of the text, where there is room; at its edge where not */
+    position: absolute; right: max(24px, calc(50% - 422px)); top: -44px;
     width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
     background: #fff; box-shadow: var(--shadow); cursor: pointer; color: var(--ink-2);
     display: grid; place-items: center;
   }
 
   /* composer */
-  .composer-wrap { flex: none; padding: 8px 24px 18px; background: var(--bg); }
+  .composer-wrap { flex: none; padding: 8px 24px 18px; background: var(--bg); position: relative; }
+  /* the question on top; the model and send below it, on one line whatever its length */
   .composer {
-    max-width: 752px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px;
+    max-width: 752px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px;
     background: #fff; border: 1px solid var(--line); border-radius: 16px;
-    padding: 8px 8px 8px 16px; box-shadow: var(--shadow);
+    padding: 12px 10px 10px 16px; box-shadow: var(--shadow);
     transition: border-color .15s, box-shadow .15s;
   }
+  .composer-bar { display: flex; align-items: center; gap: 8px; }
+  .composer-bar .gap { flex: 1; }
   .composer:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
   .composer textarea {
-    flex: 1; min-width: 0; font: inherit; font-size: 15px; line-height: 1.5;
+    width: 100%; min-width: 0; font: inherit; font-size: 15px; line-height: 1.5;
     border: 0; outline: 0; resize: none; background: transparent; color: var(--ink);
-    padding: 7px 0; margin: 0; max-height: 200px; min-height: 22px;
+    padding: 2px 6px 2px 0; margin: 0; max-height: 200px; min-height: 22px;
   }
   .composer textarea:focus-visible { outline: 0; }
   .send {
@@ -440,20 +462,24 @@
   .send:disabled { background: #cfd6db; cursor: default; }
   .send.stop { background: var(--ink, #1f2a30); }
   .send.stop:hover { background: #000; }
-  /* the model that answers, when the server offers a choice */
+  /* the model that answers, when the server offers a choice: a real select (keyboard, screen
+     readers, the system's own list), drawn with Ask's own arrow */
   .model {
-    flex: none; align-self: center; font: inherit; font-size: 12px; color: var(--muted);
-    background: transparent; border: 1px solid var(--line); border-radius: 8px;
-    padding: 5px 6px; max-width: 130px; cursor: pointer;
+    flex: none; height: 32px; max-width: 220px; margin-left: -10px; cursor: pointer;
+    appearance: none; -webkit-appearance: none; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2);
+    border: 1px solid transparent; border-radius: 9px; padding: 0 28px 0 10px;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b7780' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center / 14px 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background-color .15s, border-color .15s, color .15s;
   }
-  .model:hover { color: var(--ink); }
+  .model:hover { background-color: var(--panel); border-color: var(--line); color: var(--ink); }
   .model:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
 
   /* the question library: the Questions button in the top bar (beside Share and Export
      PDF), the panel it opens, the new chat page's groups, and Save question under an answer */
   .lib-pop {
     position: absolute; top: 58px; right: 16px; z-index: 30;
-    width: min(880px, calc(100% - 32px)); height: min(640px, calc(100% - 140px)); min-height: 300px;
+    width: min(880px, calc(100% - 32px)); max-height: min(640px, calc(100% - 140px));
     display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line);
     border-radius: 14px; box-shadow: 0 16px 48px rgba(16, 24, 32, .2); overflow: hidden;
   }
@@ -503,12 +529,17 @@
   .lib-confirm span { font-size: 12.5px; color: var(--danger); }
   .lib-edit { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--panel); border-radius: 11px; grid-column: 1 / -1; }
   .lib-edit input, .lib-edit textarea, .save-form input[type=text], .save-form textarea {
-    font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
-    background: var(--bg); color: var(--ink); resize: vertical; width: 100%;
+    font: inherit; font-size: 13.5px; border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px;
+    background: var(--bg); color: var(--ink); resize: none; width: 100%; outline: 0;
+  }
+  .lib-edit input:focus, .lib-edit textarea:focus, .save-form input[type=text]:focus, .save-form textarea:focus {
+    border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft);
   }
   .lib-edit .row { display: flex; gap: 6px; align-items: center; }
   .lib-msg { font-size: 12px; color: var(--danger); }
-  .lib-empty { padding: 18px 4px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+  .lib-empty { padding: 44px 16px; font-size: 13.5px; color: var(--muted); line-height: 1.5; text-align: center; }
+  .lib-empty svg { display: block; margin: 0 auto 8px; color: var(--faint); }
+  .lib-empty b { display: block; color: var(--ink-2); font-size: 14.5px; font-weight: 500; margin-bottom: 2px; }
   .lib-foot { display: flex; align-items: center; gap: 14px; padding: 9px 16px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line-2); }
   .lib-foot span { flex: 1; }
   .lib-foot.err span { color: var(--danger); }
@@ -523,7 +554,6 @@
     font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
     text-align: left; margin: 18px 0 8px;
   }
-  .caps + .lib-label { margin-top: 0; }
   .card small.ok { color: var(--pass); }
   .save-form label.field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; cursor: default; }
   .save-form label.field small { color: var(--muted); font-size: 11.5px; }
@@ -566,12 +596,15 @@
   .trace-slot { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .trace-slot:empty { display: none; }
   .trace-slot > .trace, .trace-slot > .flag-form { flex: 1 1 100%; }
-  .trace-slot > .flag-form { max-width: none; }   /* the open report form takes its own line */
+  /* an open form, then the open trace, come under the row of buttons, never inside it */
+  .trace-slot > .flag-form { max-width: none; order: 2; }
+  .trace-slot > .trace { order: 3; }
   .trace-bar {
-    display: inline-flex; align-items: center; flex-wrap: wrap; gap: 7px; cursor: pointer;
-    font-size: 12.5px; color: var(--muted); background: none; border: 1px solid var(--line-2);
-    padding: 4px 10px 4px 8px; border-radius: 8px; text-align: left;
+    display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; cursor: pointer; min-height: 28px;
+    font-size: 12.5px; font-weight: 500; color: var(--muted); background: var(--bg); border: 1px solid var(--line-2);
+    padding: 3px 10px 3px 8px; border-radius: 8px; text-align: left;
   }
+  .trace-bar .lbl-short { display: none; }
   .trace-bar:hover, .trace-bar[aria-expanded="true"] { border-color: var(--line); color: var(--ink-2); background: var(--panel); }
   .trace-bar .chev { transition: transform .15s; }
   .trace-bar[aria-expanded="true"] .chev { transform: rotate(180deg); }
@@ -593,13 +626,18 @@
   .seg button { border: 0; background: none; padding: 4px 11px; font-size: 12.5px; cursor: pointer; color: var(--ink-2); }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
-  .tr-meta { flex: 1; min-width: 180px; color: var(--muted); font-size: 12px; }
+  .tr-meta { flex: 1; min-width: 120px; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tr-tools { display: flex; gap: 6px; flex: none; }
   .mini-btn {
-    border: 1px solid var(--line); background: var(--bg); color: var(--ink-2); font-size: 12px;
-    padding: 3px 9px; border-radius: 7px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 500;
+    border-radius: 8px; cursor: pointer; white-space: nowrap;
   }
-  .mini-btn:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+  .mini-btn:hover { border-color: #cfd6db; background: var(--panel); color: var(--ink); }
+  .mini-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .mini-btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .mini-btn.quiet { border-color: transparent; background: none; color: var(--muted); }
+  .mini-btn.quiet:hover { background: var(--line-2); color: var(--ink); }
   .mini-btn:disabled { opacity: .5; cursor: default; }
   .tr-sec { padding: 10px 12px; border-bottom: 1px solid var(--line-2); min-width: 0; }
   .tr-sec:last-child { border-bottom: 0; }
@@ -609,10 +647,14 @@
   }
   .tr-msg { color: var(--muted); }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
-  .stat { background: var(--panel); border-radius: 8px; padding: 5px 9px; min-width: 0; }
-  .stat b { display: block; font-size: 14px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .stat span { display: block; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+  /* dividers between the numbers, and between rows when they wrap (the outer ones are clipped) */
+  .stat { padding: 9px 11px 8px; min-width: 0; border-left: 1px solid var(--line-2); border-top: 1px solid var(--line-2); margin: -1px 0 0 -1px; }
+  .stat b { display: block; font-size: 15.5px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat span { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+  .split-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 7px; font-size: 11.5px; color: var(--muted); }
+  .split-key span { display: inline-flex; align-items: center; gap: 6px; }
+  .split-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
   .split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 8px; background: var(--line-2); }
   .split i { display: block; height: 100%; }
 
@@ -728,6 +770,18 @@
     :root { --tl-label: 128px; }
     .who b { max-width: 150px; }
     .who small { display: none; }
+    .top-more { display: grid; }
+    .top-menu {
+      display: none; position: absolute; top: 40px; right: 0; z-index: 31; flex-direction: column; align-items: stretch;
+      gap: 2px; min-width: 190px; padding: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(16, 24, 32, .16);
+    }
+    .top-tools.open .top-menu { display: flex; }
+    .top-menu .top-btn { border-color: transparent; justify-content: flex-start; height: 36px; font-size: 14px; }
+    .top-menu .top-btn:hover { background: var(--panel); }
+    .to-bottom { right: 12px; }
+    .trace-bar .lbl-long { display: none; }
+    .trace-bar .lbl-short { display: inline; }
     .st-h { grid-template-columns: 44px 8px minmax(0, 1fr) auto; gap: 6px; padding: 6px 8px; }
     .st-b { padding: 2px 10px 10px 12px; }
     .tr-tools { width: 100%; }
@@ -766,6 +820,10 @@
     </button>
     <h1 id="chat-title">New chat</h1>
     <div class="top-tools" id="top-tools" hidden>
+      <button class="icon-btn top-more" id="top-more" type="button" aria-label="More: Questions, Share, Export PDF" aria-haspopup="true" aria-expanded="false">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+      </button>
+      <div class="top-menu" id="top-menu">
       <button class="top-btn" id="lib-btn" type="button" hidden aria-haspopup="dialog" aria-expanded="false"
               title="Saved questions, and the team questions for this dataset">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
@@ -784,6 +842,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></svg>
         Export PDF
       </button>
+      </div>
       <div class="popover" id="share-pop" role="dialog" aria-label="Share this conversation" hidden></div>
     </div>
     <div class="who" id="who" hidden><b id="who-name"></b><small id="who-level"></small></div>
@@ -794,17 +853,20 @@
     <div class="thread" id="thread"></div>
   </main>
 
-  <button class="to-bottom" id="to-bottom" type="button" aria-label="Scroll to the latest answer" hidden>
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
-  </button>
 
   <div class="composer-wrap">
+    <button class="to-bottom" id="to-bottom" type="button" aria-label="Scroll to the latest answer" hidden>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+    </button>
     <form class="composer" id="composer">
       <textarea id="q" rows="1" placeholder="Ask about this dataset…" aria-label="Your question"></textarea>
+      <div class="composer-bar">
       <select id="model" class="model" aria-label="The model that answers" title="The model that answers" hidden></select>
+      <span class="gap"></span>
       <button class="send" id="send" type="submit" aria-label="Send" disabled>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
+      </div>
     </form>
   </div>
 </section>
@@ -974,6 +1036,7 @@ function pickStarters() {
   const features = Object.keys(byFeature)
     .map(f => [f, Math.random()]).sort((a, b) => a[1] - b[1]).map(x => x[0])   // shuffle
     .sort((a, b) => (lastShown[a] ?? -1) - (lastShown[b] ?? -1));            // oldest first
+  HERO_TOPIC = '';
   STARTERS = features.slice(0, 6).map(f => {
     const fresh = byFeature[f].filter(p => !recent.has(p.q));
     const from = fresh.length ? fresh : byFeature[f];
@@ -1106,6 +1169,16 @@ function renderTopTools() {
   const n = (chat.sharedWith || []).length;
   $('share-btn').lastChild.textContent = n ? ` Shared · ${n}` : ' Share';
 }
+// On a phone the top bar's buttons sit in a "more" menu, closed again by a choice or a click outside.
+function closeTopMenu() { $('top-tools').classList.remove('open'); $('top-more').setAttribute('aria-expanded', 'false'); }
+$('top-more').onclick = e => {
+  e.stopPropagation();
+  const open = !$('top-tools').classList.contains('open');
+  $('top-tools').classList.toggle('open', open);
+  $('top-more').setAttribute('aria-expanded', String(open));
+};
+$('top-menu').addEventListener('click', () => closeTopMenu());
+document.addEventListener('click', e => { if (!e.target.closest('#top-tools')) closeTopMenu(); });
 // Clone: a copy of a colleague's conversation becomes one of mine, with the answers I
 // could see in it as context; my questions in it are answered at my own access level.
 $('clone-btn').onclick = async () => {
@@ -1174,7 +1247,7 @@ function renderShare(msg, bad) {
   pop.appendChild(list);
   if (msg) pop.appendChild(el('div', 'msg' + (bad ? ' bad' : ''), msg));
   const rules = el('div', 'rules');
-  rules.append(el('b', null, 'Read-only'), document.createTextNode(' unless you tick "can continue", which needs the same permissions as yours. '));
+  rules.append(el('b', null, 'Read-only'), document.createTextNode(' unless you tick "can continue" (that needs the same permissions as yours). '));
   rules.append(document.createTextNode(SHARE_RULE === 'identical'
     ? 'Answers show only to people whose permissions match yours. '
     : 'Answers above a person\'s access level stay hidden from them. '));
@@ -1384,6 +1457,14 @@ function renderThread() {
   }
   if (!chat || !chat.turns.length) { threadEl.appendChild(hero()); scroller.scrollTop = 0; $('to-bottom').hidden = true; return; }
   if (chat.readonly || chat.view || chat.clonedFrom) threadEl.appendChild(banner(chat));
+  // Answers reopened from the server keep their trace, not their Query button: said once.
+  if (chat.turns.some(x => x.restored && !x.pending && !x.withheld)) {
+    const n = el('div', 'reopened');
+    n.title = 'Opened from the Ask server: earlier answers keep their trace, but not their Query button.';
+    n.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>';
+    n.appendChild(el('span', null, 'Reopened conversation: earlier Query buttons are not kept'));
+    threadEl.appendChild(n);
+  }
   chat.turns.forEach(t => threadEl.appendChild(turnNode(t)));
   if (chat.expired && !chat.readonly) {
     threadEl.appendChild(el('div', 'note',
@@ -1412,22 +1493,54 @@ function banner(chat) {
 }
 let WHO = null;
 
+// The topics on a new chat: quiet filters over the starter questions, by the Ask feature
+// each one shows (FEATURES in webapp.py). A topic with no starter for this dataset is left out.
+const HERO_TOPICS = [
+  ['Counts', ['count', 'combine', 'number', 'date', 'negation', 'compare', 'visits', 'medications', 'filters']],
+  ['Breakdowns', ['breakdown', 'breakdown2']],
+  ['Charts', ['ranking', 'breakdown', 'breakdown2']],
+  ['Results', ['rows', 'results']],
+  ['Reports', ['report', 'columns', 'query']],
+];
+let HERO_TOPIC = '';   // '' is All
+// Starters about one topic: those already on show first, then one per feature in turn,
+// so a topic shows its variety before it repeats a feature.
+function topicStarters(features, n) {
+  const out = STARTERS.filter(p => features.includes(p.feature)), seen = new Set(out.map(p => p.q));
+  const lists = features.map(f => POOL.filter(p => p.feature === f && !seen.has(p.q)));
+  for (let i = 0; out.length < n && lists.some(l => i < l.length); i++) {
+    lists.forEach(l => { const p = l[i]; if (p && out.length < n && !seen.has(p.q)) { seen.add(p.q); out.push(p); } });
+  }
+  return out.slice(0, n);
+}
+
 function hero() {
   const h = el('div', 'hero');
   h.appendChild(el('h2', null, `Ask about ${DATASET_NAME}`));
   h.appendChild(el('p', null,
-    'Plain-English questions, exact answers from Chiron. Ask follow-ups, break results down, ' +
-    'chart them, and hand any cohort to Chiron in one click.'));
-  const caps = el('div', 'caps');
-  ['Counts', 'Follow-ups', 'Breakdowns', 'Charts', 'Results', 'Reports'].forEach(c => caps.appendChild(el('span', 'cap', c)));
-  h.appendChild(caps);
+    'Questions in plain words, answers from Chiron\'s own numbers. Follow up, break results down, ' +
+    'chart them, and open any group of patients in Chiron.'));
   const team = LIB ? (LIB.team || []).filter(q => q.pinned).slice(0, 4) : [];
   const mine = LIB ? (LIB.mine || []).slice(0, 4) : [];
   if (team.length) h.appendChild(libGroup('Team questions', team));
   if (mine.length) h.appendChild(libGroup('My questions', mine));
-  const starters = team.length || mine.length ? STARTERS.slice(0, 2) : STARTERS;
+  const groups = !!(team.length || mine.length);
+  const topics = HERO_TOPICS.filter(([, fs]) => POOL.some(p => fs.includes(p.feature)));
+  if (!topics.some(([t]) => t === HERO_TOPIC)) HERO_TOPIC = '';
+  const starters = HERO_TOPIC ? topicStarters(topics.find(([t]) => t === HERO_TOPIC)[1], groups ? 4 : 6)
+                              : STARTERS.slice(0, groups ? 2 : 6);
   if (starters.length) {
-    if (team.length || mine.length) h.appendChild(el('div', 'lib-label', 'Try'));
+    if (groups) h.appendChild(el('div', 'lib-label', 'Try'));
+    if (topics.length > 1) {
+      const caps = el('div', 'caps'); caps.setAttribute('role', 'group'); caps.setAttribute('aria-label', 'Starter questions about');
+      [['', 'All'], ...topics.map(([t]) => [t, t])].forEach(([t, label]) => {
+        const b = el('button', 'cap', label); b.type = 'button';
+        b.setAttribute('aria-pressed', String(t === HERO_TOPIC));
+        b.onclick = () => { HERO_TOPIC = t; const again = hero(); h.replaceWith(again); };
+        caps.appendChild(b);
+      });
+      h.appendChild(caps);
+    }
     const cards = el('div', 'cards');
     starters.forEach(s => {
       const b = el('button', 'card'); b.type = 'button';
@@ -1478,9 +1591,6 @@ function paintBot(body, turn) {
     body.appendChild(el('div', 'note',
       'This conversation had expired, so this was answered on its own, without the earlier questions.'));
   }
-  if (turn.restored && !turn.pending) {
-    body.appendChild(el('div', 'note', 'Opened from the Ask server. The Query button of this earlier answer is not kept; its trace is.'));
-  }
   if (turn.answer) {
     const a = el('div', 'answer');
     // every question asked up to this answer: a report keeps only the extras one asked for
@@ -1522,24 +1632,31 @@ function flagRow(turn) {
   const b = el('button', 'trace-bar report-btn'); b.type = 'button'; b.dataset.report = '1';
   b.title = 'Send this question, the answer and its trace to the people who run Ask';
   b.innerHTML = FLAG_ICON;
-  b.appendChild(el('span', null, 'Report a problem'));
+  b.append(el('span', 'lbl-long', 'Report a problem'), el('span', 'lbl-short', 'Report'));
   b.onclick = () => { b.replaceWith(flagForm(turn)); };
   return b;
 }
 function flagForm(turn) {
   const form = el('form', 'flag-form'); form.dataset.report = '1';
   form.appendChild(el('b', null, 'What is wrong with this answer?'));
-  const kinds = el('div', 'kinds');
-  FLAG_KINDS.forEach(([v, label], i) => {
-    const l = el('label'); const r = document.createElement('input'); r.type = 'radio'; r.name = 'kind-' + turn.id; r.value = v; if (i === 0) r.checked = true;
-    l.append(r, document.createTextNode(label)); kinds.appendChild(l);
+  // the kind of problem: one choice, shown as pills (a radio group to assistive tech)
+  const kinds = el('div', 'kinds'); kinds.setAttribute('role', 'radiogroup'); kinds.setAttribute('aria-label', 'Kind of problem');
+  let kind = FLAG_KINDS[0][0];
+  FLAG_KINDS.forEach(([v, label]) => {
+    const p = el('button', null, label); p.type = 'button'; p.dataset.kind = v; p.setAttribute('role', 'radio');
+    const mark = () => kinds.querySelectorAll('button').forEach(x => {
+      const on = x.dataset.kind === kind; x.setAttribute('aria-pressed', String(on)); x.setAttribute('aria-checked', String(on));
+    });
+    p.onclick = () => { kind = v; mark(); };
+    kinds.appendChild(p);
+    mark();
   });
   form.appendChild(kinds);
   const note = el('textarea'); note.placeholder = 'Optional: what you expected, or what you were after'; note.setAttribute('aria-label', 'Details');
   form.appendChild(note);
   const row = el('div', 'row');
-  const send = el('button', 'mini-btn', 'Send report'); send.type = 'submit';
-  const cancel = el('button', 'mini-btn', 'Cancel'); cancel.type = 'button';
+  const send = el('button', 'mini-btn primary', 'Send report'); send.type = 'submit';
+  const cancel = el('button', 'mini-btn quiet', 'Cancel'); cancel.type = 'button';
   const msg = el('span', null, '');
   row.append(send, cancel, msg);
   form.appendChild(row);
@@ -1547,7 +1664,6 @@ function flagForm(turn) {
   form.onsubmit = async e => {
     e.preventDefault();
     send.disabled = true; msg.textContent = 'Sending…';
-    const kind = (form.querySelector('input[type=radio]:checked') || {}).value || 'other';
     let r = null;
     try {
       r = await fetch('flag', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3345,6 +3461,23 @@ const KINDS = {
   note: ['Note', '--k-note'], error: ['Error', '--k-error'],
 };
 const LEVELS = [['summary', 'Summary'], ['detailed', 'Detailed'], ['debug', 'Debug']];
+// A step's name as a sentence. Traces recorded before 2026-11-25 say "Model #1 → asking
+// chiron, counting patients"; they read like new ones: "Model call 1: asks Chiron, counts patients".
+const OLD_VERBS = {
+  'asking chiron': 'asks Chiron', 'checking access': 'checks access', 'finding variables': 'finds variables',
+  'reading a variable': 'reads a variable', 'looking up values': 'looks up values', 'building filters': 'builds filters',
+  'checking date rules': 'checks date rules', 'counting patients': 'counts patients', 'pulling rows': 'pulls rows',
+  'exporting': 'exports', 'cross-tabulating': 'cross-tabulates', 'breaking down': 'breaks down',
+  'reading reports': 'reads reports', 'running a report': 'runs a report', 'saving to chiron': 'saves to Chiron',
+  'updating the report': 'updates the report', 'deleting the report': 'deletes the report',
+  'reading your results': 'reads your results', 'updating your results': 'updates your results',
+  'checking column options': 'checks column options',
+};
+function stepName(label) {
+  const s = String(label == null ? '' : label), m = /^Model #(\d+)(?: \u2192 (.*))?$/.exec(s);
+  if (!m) return s;
+  return 'Model call ' + m[1] + (m[2] ? ': ' + m[2].split(', ').map(x => OLD_VERBS[x] || x).join(', ') : '');
+}
 const CHECK_ICON = { fail: '✕', warn: '!', info: 'i', pass: '✓' };
 // --- the question library ----------------------------------------------------------------
 // Questions a person saved, and the team questions an admin picked for this dataset, filed
@@ -3524,10 +3657,14 @@ function renderLibraryList() {
   // A search looks through every topic; otherwise the topic picked on the left.
   if (LIB_TAB === 'team' && LIB_TOPIC && !words.length) items = items.filter(q => topicOf(q) === LIB_TOPIC);
   if (!items.length) {
-    list.appendChild(el('div', 'lib-empty', all.length ? 'No question matches.'
-      : LIB_TAB === 'team' ? 'No team questions for this dataset yet. ' + (LIB.admin
-          ? 'Add them on the Admin page, or with Save question under an answer.' : 'The Ask admins add them.')
-      : 'Nothing saved yet. Use Save question under an answer to keep a question here.'));
+    const [head, more] = all.length ? ['No question matches', 'Try other words, or another topic.']
+      : LIB_TAB === 'team' ? ['No team questions yet', LIB.admin
+          ? 'Add them on the Admin page, or with Save question under an answer.' : 'The Ask admins add them.']
+      : ['Nothing saved yet', 'Use Save question under an answer to keep a question here.'];
+    const empty = el('div', 'lib-empty');
+    empty.innerHTML = BOOKMARK_ICON.replace(/width="\d+" height="\d+"/, 'width="26" height="26"');
+    empty.append(el('b', null, head), document.createTextNode(more));
+    list.appendChild(empty);
     return;
   }
   const grid = () => { const g = el('div', 'lib-grid'); list.appendChild(g); return g; };
@@ -3610,8 +3747,8 @@ function libEditor(q) {
   name.value = q.name || ''; name.setAttribute('aria-label', 'Name');
   const text = el('textarea'); text.rows = 2; text.maxLength = 1000; text.value = q.text; text.setAttribute('aria-label', 'Question');
   const row = el('div', 'row');
-  const ok = el('button', 'mini-btn', 'Save'); ok.type = 'submit';
-  const no = el('button', 'mini-btn', 'Cancel'); no.type = 'button';
+  const ok = el('button', 'mini-btn primary', 'Save'); ok.type = 'submit';
+  const no = el('button', 'mini-btn quiet', 'Cancel'); no.type = 'button';
   const msg = el('span', 'lib-msg', '');
   no.onclick = () => renderLibraryList();
   row.append(ok, no, msg);
@@ -3633,7 +3770,7 @@ function saveRow(turn) {
   const b = el('button', 'trace-bar'); b.type = 'button'; b.dataset.save = '1';
   b.title = 'Keep this question in your Questions list, to ask it again';
   b.innerHTML = BOOKMARK_ICON;
-  b.appendChild(el('span', null, 'Save question'));
+  b.append(el('span', 'lbl-long', 'Save question'), el('span', 'lbl-short', 'Save'));
   b.onclick = () => b.replaceWith(saveForm(turn));
   return b;
 }
@@ -3682,8 +3819,8 @@ function saveForm(turn) {
     loadExpected(turn, exp);
   }
   const row = el('div', 'row');
-  const ok = el('button', 'mini-btn', 'Save'); ok.type = 'submit';
-  const cancel = el('button', 'mini-btn', 'Cancel'); cancel.type = 'button';
+  const ok = el('button', 'mini-btn primary', 'Save'); ok.type = 'submit';
+  const cancel = el('button', 'mini-btn quiet', 'Cancel'); cancel.type = 'button';
   const msg = el('span', null, '');
   row.append(ok, cancel, msg);
   form.appendChild(row);
@@ -3954,8 +4091,8 @@ function tracePanel(turn, ui) {
     return box;
   }
   const lvl = TRACE_LEVEL;
-  if (data.calls) box.appendChild(whatSection(turn, data));
   if (data.stats && data.stats.total_ms != null) box.appendChild(statsSection(data));
+  if (data.calls) box.appendChild(whatSection(turn, data));
   if (data.checks) box.appendChild(checksSection(turn, data));
   if (lvl !== 'summary' && data.figures && data.figures.length) box.appendChild(figuresSection(turn, data));
   box.appendChild(timelineSection(turn, data, ui));
@@ -4053,14 +4190,16 @@ function traceHead(turn, data) {
   if (data) {
     if (data.steps) meta.push(`${data.steps.length} steps` + (data.done ? '' : ' so far'));
     if (data.stats && data.stats.total_ms != null) meta.push(fmtMs(data.stats.total_ms));
-    if (data.model) meta.push(data.model);
+    if (data.model) meta.push(modelName(data.model));
     if (data.claude_version) meta.push('Claude Code ' + data.claude_version);
     if (data.followup_lost) meta.push('conversation had expired: asked as a new one');
     else if (data.followup) meta.push(`follow-up #${data.turn}, continuing the conversation`);
     else meta.push('new conversation');
-    if (data.dataset) meta.push(data.dataset);
+    if (data.dataset) meta.push(data.dataset === DATASET ? DATASET_NAME : data.dataset);
   }
-  head.appendChild(el('div', 'tr-meta', meta.join(' · ')));
+  const metaEl = el('div', 'tr-meta', meta.join(' · '));
+  metaEl.title = meta.join(' · ');
+  head.appendChild(metaEl);
   const tools = el('div', 'tr-tools');
   const full = turn.trace && TRACES[turn.trace.id];
   // The full record when it is there; else what has streamed in, marked partial.
@@ -4122,6 +4261,15 @@ function statsSection(data) {
     split.appendChild(i);
   });
   sec.appendChild(split);
+  // the bar's key: what each colour is
+  const key = el('div', 'split-key');
+  [['startup', st.startup_ms], ['model', st.model_ms], ['tool', st.chiron_ms], ['retry', st.retry_ms || 0], ['post', st.post_ms]]
+    .filter(([, v]) => v > 0).forEach(([k]) => {
+      const s = el('span'), i = el('i'); i.style.background = kindColor(k);
+      s.append(i, document.createTextNode(k === 'tool' ? 'Chiron' : KINDS[k][0]));
+      key.appendChild(s);
+    });
+  sec.appendChild(key);
   return sec;
 }
 
@@ -4213,11 +4361,11 @@ function timelineSection(turn, data, ui) {
     const row = el('div', 'tl-row' + (ui.sel === s.id ? ' sel' : '') + (s.status === 'error' ? ' error' : ''));
     const end = s.t1 == null ? total : s.t1;
     const dur = end - s.t0;
-    row.title = `${s.label}\n${fmtAt(s.t0)} → ${s.t1 == null ? 'still running' : fmtAt(s.t1)}  (${fmtMs(dur)})` +
+    row.title = `${stepName(s.label)}\n${fmtAt(s.t0)} → ${s.t1 == null ? 'still running' : fmtAt(s.t1)}  (${fmtMs(dur)})` +
       (s.summary ? `\n${s.summary}` : '');
     const name = el('div', 'tl-name' + (s.kind === 'tool' ? ' sub' : ''));
     const dot = el('span', 'kdot'); dot.style.background = kindColor(s.status === 'error' ? 'error' : s.kind);
-    name.append(dot, el('span', null, (s.kind === 'tool' ? '↳ ' : '') + s.label));
+    name.append(dot, el('span', null, (s.kind === 'tool' ? '↳ ' : '') + stepName(s.label)));
     const track = el('div', 'tl-track');
     gridAt.forEach(p => { const g = el('i', 'tl-grid'); g.style.left = p + '%'; track.appendChild(g); });
     const left = 100 * s.t0 / total, width = 100 * dur / total;
@@ -4270,7 +4418,7 @@ function stepCard(turn, data, s, ui, lvl) {
   card.dataset.step = s.id;
   const h = el('div', 'st-h');
   const dot = el('span', 'kdot'); dot.style.background = kindColor(s.status === 'error' ? 'error' : s.kind);
-  const lab = el('div', 'st-l', (s.kind === 'tool' ? '↳ ' : '') + s.label);
+  const lab = el('div', 'st-l', (s.kind === 'tool' ? '↳ ' : '') + stepName(s.label));
   if (s.summary) lab.appendChild(el('small', null, s.summary));
   if (s.builds_on) lab.appendChild(el('small', 'builds', buildsText(s.builds_on, s.adds)));
   const dur = s.t1 == null ? 'running…' : s.t1 > s.t0 ? fmtMs(s.t1 - s.t0) : '';
@@ -4493,21 +4641,11 @@ function renderWho(d, match) {
     box.title = (d && d.error) || 'Log in to Chiron first; Ask answers as the person logged in.';
     return;
   }
-  const u = (d && d.user) || {};
+  // Signed in, the box stays hidden: the top bar keeps its room for the conversation, and
+  // inside the Chiron UI the name and access are on Chiron's own pages. It only ever shows
+  // the "not signed in" warning.
   box.classList.remove('out');
-  const lv = match && match.access_level;
-  const levelText = lv ? (ACCESS[lv] || lv) + ' · ' + DATASET_NAME
-                       : (DATASET ? 'no access to ' + DATASET_NAME : '');
-  if (EMBEDDED) {
-    // Inside the Chiron UI the name, the dataset and the access level are already on
-    // Chiron's own pages, so the box only ever shows the "not signed in" warning there.
-    box.hidden = true;
-    return;
-  }
-  name.textContent = u.name || u.username || ME;
-  level.textContent = levelText;
-  box.title = 'Signed in to Chiron as ' + (u.name || ME) + (u.email ? ' (' + u.email + ')' : '')
-    + (lv ? '. On ' + DATASET_NAME + ': ' + (ACCESS[lv] || lv) + '.' : '');
+  box.hidden = true;
 }
 
 // The sidebar's foot: everyone sees their own total (questions asked, what they cost);
