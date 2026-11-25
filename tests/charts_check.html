@@ -127,6 +127,10 @@
       { x: 'Outpatient', y: 22104 }, { x: 'Emergency', y: 9876 }, { x: 'Inpatient', y: 3412 }] }, want: { colors: 'palette', n: 5 } },
     { name: 'ordered groups', spec: { type: 'bar', title: 'Patients by age group', label: 'Patients', data: [['0-17', 2214], ['18-34', 2086], ['35-49', 1842], ['50-64', 1903], ['65-79', 1391], ['80+', 564]] },
       want: { colors: 'ramp', n: 6 } },
+    { name: 'age bands in words', spec: { type: 'bar', title: 'Patients with type 2 diabetes by age group', label: 'Patients',
+      data: [['Under 40', 0], ['40 to 59', 15], ['60 to 79', 9], ['80 and over', 2]] }, want: { colors: 'ramp', n: 4 } },
+    { name: 'words that are not bands', spec: { type: 'bar', title: 'Patients by plan', label: 'Patients', data: [['Plan 40', 12], ['Gold', 9], ['Over the limit', 3]] },
+      want: { colors: 'palette', n: 3 } },
     { name: 'percentages', spec: { type: 'bar', title: 'Share with hypertension, by age group', label: 'Percent of patients', data: [['0-17', '3.1%'], ['18-34', '8.4%'], ['35-49', '21.7%'], ['50-64', '38.2%']] },
       want: { xls: { fmt: '0.0#%', first: 0.031 } } },
     { name: 'two readings', spec: { type: 'line', title: 'Blood pressure, one patient', label: 'mmHg', x: ['2023-01-05', '2023-06-10', '2024-02-20', '2024-09-01'],
@@ -296,8 +300,9 @@
     if (s.multi && s.type === 'bar') ok(meta0.data.some(b => b.options.backgroundColor instanceof CanvasGradient), 'grouped bars fade in along their length');
     if (w.band) ok(ch.data.datasets[0].fill === '+1', 'the band between two readings is shaded');
     if (w.colors === 'palette') {
-      const b1 = meta0.data[1], r1 = ch.canvas.getBoundingClientRect();
-      ch.canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: r1.left + b1.x, clientY: r1.top + (b1.y + b1.base) / 2, bubbles: true }));
+      const b1 = meta0.data[1], r1 = ch.canvas.getBoundingClientRect(), side = ch.options.indexAxis === 'y';
+      ch.canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: r1.left + (side ? (b1.x + b1.base) / 2 : b1.x),
+        clientY: r1.top + (side ? b1.y : (b1.y + b1.base) / 2), bubbles: true }));
       await frames(); await sleep(30);
       ok(getComputedStyle(card.querySelector('.ac-tip .tr i')).backgroundColor === 'rgb(123, 31, 162)', 'the hover key takes the bar’s color');
       ch.canvas.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));

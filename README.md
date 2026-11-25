@@ -104,6 +104,13 @@ What the Ask tab does:
   formatted spreadsheet) and **Table** buttons. Long names lie flat with each number at the
   end of its bar, counts over time start at zero, and the colors are checked for color
   blindness.
+- **PDF reports** on request ("make a PDF of asthma patients by gender and race", or "make
+  that a PDF" after an answer): the answer shows the report's first page in miniature with
+  **Download PDF** and **Open**. The PDF holds exactly what was asked for, one numbered
+  section per thing asked about (a breakdown or a trend with its chart); a summary, key
+  numbers, tables, callouts and "how it was counted" only when asked for. To change one,
+  ask ("remove the race part", "add a short summary"): Ask writes a new version and says
+  what changed. The dataset sits at the foot of each page, with the page number.
 - **A trace under every answer**, for finding out why one is wrong. **Trace** opens it.
   It shows a timeline of each step
   (start-up, every model call, every Chiron tool call, the server's checks), plus time,
@@ -908,6 +915,8 @@ CHIRON_MCP_USERNAME=<agg-user>  .venv/bin/python tests/safety.py   # agg refusal
 .venv/bin/python -m tests.protocol                                 # real MCP stdio handshake
 .venv/bin/python tests/usage.py; .venv/bin/python tests/header_login.py   # offline: the ledger, the header sign-on
 python3 -m http.server 8931   # then open http://localhost:8931/tests/charts_check.html: the page's charts
+.venv/bin/python tests/reports.py                                  # offline: the report rule and its audit
+python3 -m http.server 8931   # then open http://localhost:8931/tests/reports_check.html: reports and their PDFs
 ```
 
 `tests/ask_e2e.py` asks real questions through the Ask server exactly as the page does, and
@@ -1194,6 +1203,34 @@ cannot load, the button saves the numbers as CSV instead and says so. The table 
 offers the plain CSV.
 `tests/charts_check.html` draws about fifty awkward chart blocks with the page's own code
 and checks each one (names and numbers fit, hover, table, CSV, image, no markup runs).
+
+PDF reports come from the answer's ```` ```report ```` block: JSON with a `title` and up to
+eight `sections` (a `heading`, `text`, a `chart` written as in a chart block, a `table`
+given as `{columns, rows}` or `true` for the chart's own numbers, a `callout`
+`{value, text}`), and only when asked for, a `summary`, up to four `numbers`
+(`{value, label}`) and `about` (`looked_up`, `counted`, `notes`: "How it was counted"). The
+answering rules ask for it only when someone asks for a PDF or a report to read or
+download (saving a report in Chiron stays a Chiron report), with exactly what was asked for:
+a bare "a PDF report on asthma" gets one section with the count, and the follow-up
+suggestions offer parts to add. A change is a whole new report written from the last one.
+Models do not always hold back, so the page does too: a summary, key numbers, a table, a
+callout or "how it was counted" is shown only when a question in the conversation asked
+for one (summary, key numbers, table, list, highlight, how it was counted, methods,
+sources...), unless it is all the report has. Report text is plain: HTML tags are dropped.
+Like a chart, the PDF holds nothing the answer does not, and it is made in the browser:
+[pdfmake](https://github.com/bpampuch/pdfmake) 0.2.10 with its Roboto fonts, from cdnjs with
+integrity hashes, loads the first time someone presses Download PDF or Open, and the charts
+are drawn at print size by the same code as in the conversation. Under the title, the date;
+nothing at the top of a page; at the foot, the dataset on the left and the page number on
+the right. A heading stays with what follows it, a chart's caption with its chart, and a
+table of fifteen rows or fewer is never split (a longer one repeats its header on each page,
+and one over 1,000 rows is cut there, saying so). Arrows, check marks and emoji, which the
+PDF font lacks, become words or are left out. A block that is not valid JSON shows as a card
+that says the report could not be read, and the trace lists each report block with any
+problems (`report_audit` in trace.py). `tests/reports_check.html` reads about thirty-five
+awkward report blocks, builds every PDF with the real library and reads it back with pdf.js:
+its pages, its text, the footer's place, that headings, captions and short tables stay
+together, and that extras appear only when asked for.
 
 ## The question library
 

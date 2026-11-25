@@ -199,7 +199,8 @@
     .topbar { height: auto; border: 0; padding: 0 0 8px; }
     .msg.user .bubble { background: #eee; color: #000; max-width: none; border-radius: 8px; }
     .ac, .table-wrap, .turn { break-inside: avoid; }
-    .ac-tools, .ac-tip, .ac-plain { display: none !important; }
+    .ac-tools, .ac-tip, .ac-plain, .ar-btns { display: none !important; }
+    .ar { break-inside: avoid; }
     .banner { padding: 0 0 10px; }
     .banner > div { background: none; border: 0; padding: 0; }
   }
@@ -329,6 +330,56 @@
   .ac-plain { padding: 9px 18px 13px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line-2); }
   .ac-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-strong); text-decoration: underline; cursor: pointer; }
   .ac-table .n { text-align: right; }
+  /* a report (see Reports): the first page in miniature, the title, the buttons */
+  .ar {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "thumb title" "thumb btns" ". err";
+    column-gap: 16px; align-items: center; margin: 2px 0 12px; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 12px 16px 12px 12px; background: #fff;
+  }
+  .ar-thumb {
+    grid-area: thumb; width: 82px; height: 106px; overflow: hidden; border-radius: 3px; background: #fff;
+    border: 1px solid #dfe4e7; box-shadow: 0 1px 2px rgba(16, 24, 32, .06), 0 3px 10px rgba(16, 24, 32, .08);
+  }
+  .ar-thumb .ar-pg { transform: scale(.134); transform-origin: 0 0; }
+  .ar-title { grid-area: title; align-self: end; margin-bottom: 10px; font-size: 16.5px; font-weight: 600; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
+  .ar-btns { grid-area: btns; align-self: start; display: flex; flex-wrap: wrap; gap: 8px; }
+  .ar-btns svg { flex: none; }
+  .ar-busy .ar-btns button { cursor: progress; }
+  .ar-err { grid-area: err; margin-top: 8px; font-size: 13px; color: var(--danger); }
+  .ar-bad { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+  .ar-icon { color: var(--faint); display: flex; }
+  .ar-note { font-size: 13.5px; color: var(--muted); }
+  .ar [hidden] { display: none !important; }
+  /* the page itself, at its PDF size (Letter, 612 x 792), scaled down in .ar-thumb */
+  .ar-pg { width: 612px; height: 792px; padding: 50px 44px 54px; position: relative; background: #fff; color: #1d2328; font-family: var(--font); line-height: 1.35; }
+  .ar-pg-body { height: 688px; overflow: hidden; }
+  .ar-pg-t { font-size: 22px; font-weight: 700; line-height: 1.2; margin-bottom: 5px; }
+  .ar-pg-m { font-size: 9px; color: #6b7780; margin-bottom: 16px; }
+  .ar-pg-short { background: #f7f8f9; border-left: 3px solid #00897b; padding: 7px 10px; font-size: 10.5px; color: #3c464f; margin-bottom: 14px; }
+  .ar-pg-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .ar-pg-tiles div { border: 1px solid #e3e7ea; padding: 7px 8px 8px; }
+  .ar-pg-tiles b { display: block; font-size: 19px; }
+  .ar-pg-tiles span { display: block; font-size: 8.5px; color: #6b7780; }
+  .ar-pg-h { font-size: 13.5px; font-weight: 700; margin: 12px 0 4px; }
+  .ar-pg-h i { font-style: normal; color: #00897b; margin-right: 9px; }
+  .ar-pg-p { font-size: 10px; color: #3c464f; margin-bottom: 6px; }
+  .ar-pg-cap { font-size: 10px; font-weight: 700; margin: 8px 0 6px; }
+  .ar-pg svg { display: block; margin-bottom: 10px; }
+  .ar-pg-table { margin: 4px 0 14px; }
+  .ar-pg-table div { height: 17px; border-bottom: 1px solid #eef1f3; }
+  .ar-pg-table div:nth-child(odd) { background: #f7f8f9; }
+  .ar-pg-table .hd { height: 18px; background: #00897b !important; border: 0; }
+  .ar-pg-call { display: flex; align-items: center; gap: 14px; background: #f6effa; border: 1px solid #d7c3e6; padding: 6px 12px; margin: 4px 0 14px; }
+  .ar-pg-call b { font-size: 22px; color: #7b1fa2; }
+  .ar-pg-call span { font-size: 10px; color: #3c464f; }
+  .ar-pg-foot { position: absolute; left: 44px; right: 44px; bottom: 22px; display: flex; justify-content: space-between; font-size: 8px; color: #6b7780; }
+  @media (max-width: 560px) {
+    .ar { grid-template-columns: 58px minmax(0, 1fr); grid-template-areas: "thumb title" "btns btns" "err err"; column-gap: 12px; padding: 12px; }
+    .ar-thumb { width: 58px; height: 75px; }
+    .ar-thumb .ar-pg { transform: scale(.0948); }
+    .ar-title { align-self: center; margin-bottom: 0; }
+    .ar-btns { margin-top: 12px; }
+  }
 
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .chiron-link {
@@ -818,7 +869,7 @@ $('to-bottom').onclick = () => scrollDown(true);
 // Following a link into Chiron navigates the whole UI and reloads this iframe, so the
 // conversations have to outlive the page. They are kept per Chiron user and dataset, so
 // two people sharing a browser never see each other's questions.
-let ME = null, DATASET_NAME = DATASET, POOL = [], FEATURES = {}, STARTERS = [];
+let ME = null, DATASET_NAME = DATASET, DATASET_LEVEL = '', POOL = [], FEATURES = {}, STARTERS = [];
 let chats = [];          // newest first
 let activeId = null;     // null = a new, empty chat
 let busy = null;         // { chatId, turnId } while an answer streams
@@ -1245,7 +1296,7 @@ async function refreshTurns(chat) {
              link: local ? local.link : null, error: t.error || '', steps: [], pending: false, at: t.at || chat.updated,
              fresh: !!t.fresh, trace: t.trace || (local && local.trace) || null, restored: !local,
              followups: local ? local.followups : null, flagged: local ? local.flagged : null,
-             by: t.by || null, byName: t.by_name || null, copied: !!t.copied };
+             by: t.by || null, byName: t.by_name || null, copied: !!t.copied, level: t.access_level || null };
   });
   if (!chat.readonly) {
     // own answers the server has no trace of (given before tracing existed) are kept;
@@ -1432,7 +1483,10 @@ function paintBot(body, turn) {
   }
   if (turn.answer) {
     const a = el('div', 'answer');
-    render(a, turn.answer, { question: turn.q });
+    // every question asked up to this answer: a report keeps only the extras one asked for
+    const c = activeChat(), all = (c && c.turns) || [], upto = all.indexOf(turn);
+    const asked = (upto >= 0 ? all.slice(0, upto + 1) : [turn]).map(x => x.q || '').join('\n');
+    render(a, turn.answer, { question: turn.q, at: turn.at, level: turn.level, asked });
     body.appendChild(a);
   }
   if (turn.error) body.appendChild(el('div', 'err', turn.error));
@@ -1757,16 +1811,26 @@ function loadButton(body, cohort) {
 // --- rendering an answer --------------------------------------------------------------
 function render(target, markdown, meta) {
   Charts.sweep();
-  // Pull out ```chart blocks before markdown parsing, and draw them with Chart.js (see Charts).
-  const charts = [];
+  // Pull out ```chart and ```report blocks before markdown parsing; Charts draws the charts
+  // with Chart.js, Reports shows each report as a card that makes its PDF.
+  const charts = [], reports = [];
   const text = markdown.replace(/```chart\s*([\s\S]*?)```/g, (_, body) => {
     try { charts.push(JSON.parse(body)); return `\n\n<div data-chart="${charts.length - 1}"></div>\n\n`; }
     catch (_) { return ''; }
   });
+  const withReports = text.replace(/```report\s*([\s\S]*?)```/g, (_, body) => {
+    // a line break inside a string (JSON does not allow one) is read as a space
+    let spec;
+    try { spec = JSON.parse(body); } catch (_) {
+      try { spec = JSON.parse(body.replace(/\s*\n\s*/g, ' ')); } catch (_) { spec = { __bad: true }; }
+    }
+    reports.push(spec);
+    return `\n\n<div data-report="${reports.length - 1}"></div>\n\n`;
+  });
 
   // Answers can quote values straight from the data, so the HTML is sanitised: a value
   // that happens to contain markup must never run as script on Chiron's origin.
-  target.innerHTML = DOMPurify.sanitize(marked.parse(text, { breaks: true }));
+  target.innerHTML = DOMPurify.sanitize(marked.parse(withReports, { breaks: true }));
 
   // Links into Chiron are offered as buttons from the server's own record of what was
   // saved, so any the model wrote into its prose are reduced to plain text. Others
@@ -1789,6 +1853,9 @@ function render(target, markdown, meta) {
   target.querySelectorAll('[data-chart]').forEach(slot => {
     const card = Charts.card(charts[Number(slot.dataset.chart)], meta);
     if (card) slot.replaceWith(card); else slot.remove();
+  });
+  target.querySelectorAll('[data-report]').forEach(slot => {
+    slot.replaceWith(Reports.card(reports[Number(slot.dataset.report)], meta));
   });
 }
 
@@ -1834,8 +1901,9 @@ const Charts = (() => {
   // or measures them (an axis fitted to the values).
   const MEASURES = /%|\b(average|avg|mean|median|rate|percent(age)?|share|age|bmi|scores?|mmhg|mg|kg|lbs?|levels?|pressure|ratio|index|weight|height|temperature|glucose|a1c|hba1c|cholesterol)\b/i;
   const COUNTS = /\b(patients?|people|persons?|subjects?|diagnos\w*|visits?|encounters?|cases?|counts?|number|admissions?|prescriptions?|records?|events?|procedures?|conditions?|medications?|claims?|deaths?|births?)\b/i;
-  // Labels that are steps on a scale (ages, ranges, numbers): ordered groups.
-  const ORDERED = /^\s*(?:[<>≤≥]=?\s*)?\d[\d,.]*\s*(?:(?:-|–|to)\s*\d[\d,.]*)?\s*(?:\+|years?|yrs?|y|months?|mo|days?|d|%)?\s*$/i;
+  // Labels that are steps on a scale (ages, ranges, numbers): ordered groups. Bands in
+  // words count too: "Under 18", "18 to 39", "65 and over", "80 years or older".
+  const ORDERED = /^\s*(?:(?:[<>≤≥]=?|under|below|over|above|less than|more than|fewer than|at least|at most|up to)\s*)?\d[\d,.]*\s*(?:(?:-|–|to)\s*\d[\d,.]*)?\s*(?:\+|years?|yrs?|y|months?|mo|days?|d|%)?\s*(?:(?:and|or)\s+(?:over|older|above|more|up|under|younger|less|below))?\s*$/i;
   const DRAWN = new Set();     // charts already shown once: a repaint does not animate them again
   let measurer = null;
 
@@ -1982,9 +2050,9 @@ const Charts = (() => {
   const endText = (s, k) => { const sr = s.series[k], j = lastIndex(sr.values); return j < 0 ? '' : (s.multi ? `${sr.label} ${sr.texts[j]}` : sr.texts[j]); };
   const rowHeight = s => (s.multi ? s.series.length * 16 + 14 : s.n <= 15 ? 32 : s.n <= 30 ? 26 : 22);
   const height = s => (s.horizontal ? Math.max(110, s.n * rowHeight(s) + 12) : 270);
+  const whatOf = s => (s.parts ? `Share of ${number(s.total)}${s.unitWord ? ' ' + s.unitWord : ''}` : s.unit) || '';
   function subtitleParts(s) {
-    const what = s.parts ? `Share of ${number(s.total)}${s.unitWord ? ' ' + s.unitWord : ''}` : s.unit;
-    return [what, DATASET ? DATASET_NAME : ''].filter(Boolean);
+    return [whatOf(s), DATASET ? DATASET_NAME : ''].filter(Boolean);
   }
   const subtitle = s => subtitleParts(s).join(' · ');
   // Grouped bars: each bar at most 24 px wide, the bars of a group 2 px apart.
@@ -2392,8 +2460,9 @@ const Charts = (() => {
     if (lines.length > max) { lines.length = max; lines[max - 1] += '…'; }
     return lines.map(l => fit(l, maxW, font));
   }
-  async function png(s) {
-    const W = 1000, PAD = 44, R = 2, k = 1.28;
+  async function png(s, o = {}) {
+    const bare = !!o.bare;   // the chart alone (legend, strip, plot), for a PDF report
+    const W = 1000, PAD = bare ? 6 : 44, R = 2, k = 1.28;
     const innerW = W - PAD * 2, plotH = Math.round(height(s) * k);
     const holder = el('div');
     holder.style.cssText = `position:fixed;left:-30000px;top:0;width:${innerW}px;height:${plotH}px;pointer-events:none;`;
@@ -2405,8 +2474,8 @@ const Charts = (() => {
       chart = new Chart(cv, config(s, { k, width: innerW, exporting: true }));
       const out = document.createElement('canvas'), g = out.getContext('2d');
       const T = `600 26px ${FONT}`, S = `400 16px ${FONT}`, L = `400 15px ${FONT}`, Fo = `400 13.5px ${FONT}`;
-      const lines = wrapLines(s.title, T, innerW, 3);
-      const sub = fit(subtitle(s), innerW, S);
+      const lines = bare ? [] : wrapLines(s.title, T, innerW, 3);
+      const sub = bare ? '' : fit(subtitle(s), innerW, S);
       const keys = [];
       let kx = 0, ky = 0;
       if (s.multi) {
@@ -2419,7 +2488,8 @@ const Charts = (() => {
       }
       const legendH = s.multi ? ky + 36 : 0;
       const stripH = s.parts ? 42 : 0;
-      const H = PAD + lines.length * 34 + (sub ? 30 : 0) + 14 + legendH + stripH + plotH + 26 + 1 + 16 + 18 + PAD - 8;
+      const H = bare ? PAD + legendH + stripH + plotH + PAD
+        : PAD + lines.length * 34 + (sub ? 30 : 0) + 14 + legendH + stripH + plotH + 26 + 1 + 16 + 18 + PAD - 8;
       out.width = W * R; out.height = Math.round(H * R);
       g.scale(R, R);
       g.fillStyle = SURFACE; g.fillRect(0, 0, W, H);
@@ -2428,7 +2498,7 @@ const Charts = (() => {
       g.font = T; g.fillStyle = INK;
       lines.forEach(t => { g.fillText(t, PAD, y); y += 34; });
       if (sub) { g.font = S; g.fillStyle = MUTED; g.fillText(sub, PAD, y + 2); y += 30; }
-      y += 14;
+      if (!bare) y += 14;
       keys.forEach(kk => {
         const x = PAD + kk.x, yy = y + kk.y;
         g.fillStyle = color(kk.i); g.beginPath();
@@ -2439,12 +2509,14 @@ const Charts = (() => {
       y += legendH;
       if (s.parts) { drawStrip(g, s, PAD, y, innerW, 28); y += stripH; }
       g.drawImage(cv, PAD, y, innerW, plotH);
-      y += plotH + 26;
-      g.fillStyle = LINE; g.fillRect(PAD, y, innerW, 1);
-      y += 16;
-      const when = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      g.font = Fo; g.fillStyle = FAINT;
-      g.fillText(fit([DATASET ? DATASET_NAME : '', when, 'Made with Ask in Chiron'].filter(Boolean).join('   ·   '), innerW, Fo), PAD, y);
+      if (!bare) {
+        y += plotH + 26;
+        g.fillStyle = LINE; g.fillRect(PAD, y, innerW, 1);
+        y += 16;
+        const when = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        g.font = Fo; g.fillStyle = FAINT;
+        g.fillText(fit([DATASET ? DATASET_NAME : '', when, 'Made with Ask in Chiron'].filter(Boolean).join('   ·   '), innerW, Fo), PAD, y);
+      }
       return await new Promise(res => out.toBlob(res, 'image/png'));
     } finally {
       if (chart) chart.destroy();
@@ -2742,7 +2814,462 @@ const Charts = (() => {
   window.addEventListener('beforeprint', resizeAll);
   window.addEventListener('afterprint', resizeAll);
 
-  return { card, sweep, _read: read, _csv: csvOf, _png: png, _xlsx: xlsxOf, _color: itemColor };
+  // a chart alone as a PNG data URL with its size in pixels, for a PDF report
+  async function image(s) {
+    const blob = await png(s, { bare: true });
+    const url = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => fail(r.error); r.readAsDataURL(blob); });
+    const size = await new Promise(ok => { const im = new Image(); im.onload = () => ok([im.naturalWidth, im.naturalHeight]); im.onerror = () => ok([2000, 1000]); im.src = url; });
+    return { url, w: size[0], h: size[1] };
+  }
+
+  return { card, sweep, _read: read, _csv: csvOf, _png: png, _xlsx: xlsxOf, _color: itemColor,
+           _rows: rows, _number: number, _what: whatOf, _image: image, _save: save };
+})();
+
+// --- reports ---------------------------------------------------------------------------
+// A ```report block (see the answering rules in webapp.py) is a report the answer wrote:
+// a title, a short summary, up to four key numbers, sections (a heading, text, a chart as
+// in a chart block, a table, a callout) and notes on what was looked up and how it was
+// counted. It is shown as a card with Download PDF and Open. The PDF is built in the browser
+// with pdfmake (loaded the first time, with its Roboto fonts) and the same charts as the
+// chat, drawn at print size; nothing about it runs on the server.
+const Reports = (() => {
+  const LIB = [
+    ['https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js', 'sha512-w61kvDEdEhJPJLSAJpuL+RWp1+zTBUUpgPaP+6pcqCk78wQkOaExjnGWrVbovojeisWGQS7XZKz+gr3L+GPYLg=='],
+    ['https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js', 'sha512-EFlschXPq/G5zunGPRSYqazR1CMKj0cQc8v6eMrQwybxgIbhsfoO5NAMQX3xFDQIbFlViv53o7Hy+yCWw6iZxA=='],
+  ];
+  const TEAL = '#00897b', BLUE = '#1e88e5', PURPLE = '#7b1fa2', ORANGE = '#ef6c00';
+  const INK = '#1d2328', INK2 = '#3c464f', MUTED = '#6b7780', LINE = '#e3e7ea', LINE2 = '#eef1f3', PANEL = '#f7f8f9';
+  const KEYS = [TEAL, BLUE, PURPLE, ORANGE];
+  const LEVEL = { phi: 'Full', deid: 'De-identified', agg: 'Aggregate-only' };
+  const W = 524;            // the text width of a Letter page with 44 pt margins
+  const TALLEST = 560;      // a chart taller than this is scaled down to fit a page
+  const SHORT = 15;         // a table of this many rows or fewer never splits across pages
+  const ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+  const DOWNLOAD = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>';
+  let lib = null;
+
+  function script(src, sri) {
+    return new Promise((ok, fail) => {
+      const sc = document.createElement('script');
+      sc.src = src; sc.integrity = sri; sc.crossOrigin = 'anonymous'; sc.referrerPolicy = 'no-referrer';
+      sc.onload = ok;
+      sc.onerror = () => { sc.remove(); fail(new Error('the PDF library could not load')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function load() {
+    const ready = () => window.pdfMake && window.pdfMake.createPdf && window.pdfMake.vfs;
+    if (ready()) return Promise.resolve(window.pdfMake);
+    if (!lib) {
+      lib = (async () => {
+        if (!(window.pdfMake && window.pdfMake.createPdf)) await script(...LIB[0]);
+        if (!(window.pdfMake && window.pdfMake.vfs)) await script(...LIB[1]);
+        if (!ready()) throw new Error('the PDF library did not load');
+        return window.pdfMake;
+      })().catch(err => { lib = null; throw err; });
+    }
+    return lib;
+  }
+
+  const MAX_ROWS = 1000;    // a longer table is cut here, and the PDF says so
+  // report text is plain text: HTML tags a model may write are dropped, never shown or run
+  const str = v => (v == null ? '' : typeof v === 'object' ? '' : String(v)).replace(/<\/?[a-z!][^>]*>/gi, '').trim();
+  // a title, heading, label or table cell is plain text: markdown marks in it are dropped
+  const bare = v => str(v).replace(/^#+\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]*)`/g, '$1').trim();
+  const val = v => (typeof v === 'number' ? Charts._number(v) : bare(v));
+  const list = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v]);
+  function dateOf(at) {
+    const d = at ? new Date(at) : new Date();
+    return (isNaN(d) ? new Date() : d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  // What asks for each extra. A report holds what the person asked for: whatever the model
+  // wrote, a summary, key numbers, how it was counted, a table or a callout stays only when
+  // a question in the conversation asked for one (the answering rules say the same).
+  const ASKED = {
+    summary: /\b(summar\w*|overview|in short|brief\w*|recap|tl;?dr|takeaways?|gist)\b/i,
+    numbers: /\b(key|main|headline|top|big)\s+(numbers?|figures?|stats?|statistics|metrics|counts?)\b|\b(kpis?|number tiles?|tiles?|numbers? at the top)\b/i,
+    about: /\bhow\b.{0,40}\b(counted|calculated|computed|defined|measured)\b|\b(method\w*|sources?|definitions?|notes?|caveats?|limitations?|about these numbers|where\b.{0,30}\bfrom)\b/i,
+    table: /\b(tables?|tabular|rows?|lists?|listing|spreadsheet|columns?)\b/i,
+    callout: /\b(callouts?|call out|highlight\w*|emphasi[sz]\w*|stand out|big number)\b/i,
+  };
+  // The report block, read once: what is missing is left out, nothing is guessed. With the
+  // conversation's questions (asked), the extras nobody asked for are left out too.
+  function read(spec, asked) {
+    const allow = k => typeof asked !== 'string' || ASKED[k].test(asked);
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec) || spec.__bad) return null;
+    const sections = list(spec.sections).filter(x => x && typeof x === 'object' && !Array.isArray(x)).map((x, i) => {
+      const s = x.chart && typeof x.chart === 'object' && !Array.isArray(x.chart) ? Charts._read(x.chart) : null;
+      const chart = s && !s.empty ? s : null;
+      let table = null;
+      if (x.table === true && chart) {
+        const [columns, ...rows] = Charts._rows(chart, false);
+        table = { columns: columns.map(String), rows };
+      } else if (x.table && typeof x.table === 'object' && Array.isArray(x.table.columns) && Array.isArray(x.table.rows)) {
+        const columns = x.table.columns.map(c => bare(c) || ' ');
+        table = { columns, rows: x.table.rows.filter(Array.isArray).map(r => columns.map((_, j) => (typeof r[j] === 'number' ? r[j] : bare(r[j])))) };
+      }
+      if (table && (!table.columns.length || !table.rows.length)) table = null;
+      if (table && table.rows.length > MAX_ROWS) { table.more = table.rows.length - MAX_ROWS; table.rows = table.rows.slice(0, MAX_ROWS); }
+      // a list (patients, records) is what its section is for and always stays; only the
+      // chart's own figures as a table, or a table beside a chart, is an extra
+      if (!allow('table') && (x.table === true || chart)) table = null;
+      const callout = allow('callout') && x.callout && typeof x.callout === 'object' && val(x.callout.value) ? { value: val(x.callout.value), text: str(x.callout.text) } : null;
+      return { heading: bare(x.heading) || `Part ${i + 1}`, text: str(x.text), chart, table, callout };
+    });
+    let numbers = list(spec.numbers).filter(n => n && typeof n === 'object' && val(n.value)).slice(0, 4).map(n => ({ value: val(n.value), label: bare(n.label) }));
+    let summary = str(spec.summary);
+    if (!sections.length && !summary && !numbers.length) return null;
+    // left out when not asked for, unless that would leave nothing
+    const keepSummary = allow('summary') ? summary : '', keepNumbers = allow('numbers') ? numbers : [];
+    if (sections.length || keepSummary || keepNumbers.length) { summary = keepSummary; numbers = keepNumbers; }
+    const items = v => list(v).map(str).filter(Boolean);
+    // how it was counted: only when the report has it (the person asked for it); one written
+    // inside a section instead of beside the title joins it, at the end of the PDF
+    const obj = v => v && typeof v === 'object' && !Array.isArray(v);
+    const abs = [spec.about, ...list(spec.sections).map(x => (obj(x) ? x.about : null))].filter(obj);
+    const gather = key => [...new Set(abs.flatMap(a => items(a[key])))];
+    const about = { looked_up: gather('looked_up'), counted: gather('counted'), notes: gather('notes') };
+    return { title: bare(spec.title) || 'Report', summary, numbers, sections,
+             about: allow('about') && (about.looked_up.length || about.counted.length || about.notes.length) ? about : null };
+  }
+
+  // The PDF's font (Roboto) has no arrows, check marks, shapes or emoji: those become words
+  // or are left out, so nothing prints as an empty box.
+  const SWAP = [[/\s*\u2192\ufe0f?\s*/g, ' to '], [/\s*\u2190\ufe0f?\s*/g, ' from '], [/[\u2191\u25b2\u25b4\u2b06]\ufe0f?/g, 'up'],
+                [/[\u2193\u25bc\u25be\u2b07]\ufe0f?/g, 'down'], [/[\u2713\u2714\u2705\u2611]\ufe0f?/g, 'yes'], [/[\u2717\u2718\u274c\u274e]\ufe0f?/g, 'no'],
+                [/\u26a0\ufe0f?/g, 'Note:'], [/[\u25cf\u25cb\u25a0\u25a1\u25c6\u25c7\u2605\u2606\u25aa\u25ab\u2023\u2043]/g, '\u2022'],
+                [/[\u223c\uff5e]/g, '~'], [/[\ufe63\uff0d]/g, '-'], [/\u2261/g, '='], [/\u2194\ufe0f?/g, '-']];
+  const KEEP = '\u00a9\u00ae\u203c\u2122';   // in the font, though counted as pictographs
+  function plain(v) {
+    let s = String(v == null ? '' : v);
+    SWAP.forEach(([re, to]) => { s = s.replace(re, to); });
+    return s.replace(/\p{Extended_Pictographic}/gu, c => (KEEP.includes(c) ? c : '')).replace(/[\ufe00-\ufe0f\u200d\u20e3]/g, '').replace(/[ \t]{2,}/g, ' ');
+  }
+  // Text for the PDF: **bold** stays bold; other markdown marks and links become plain text.
+  function runs(text) {
+    const clean = plain(text).replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/`([^`]*)`/g, '$1').replace(/^#+\s*/gm, '');
+    const out = [];
+    const re = /\*\*([^*]+)\*\*/g;
+    let last = 0, m;
+    while ((m = re.exec(clean))) {
+      if (m.index > last) out.push(clean.slice(last, m.index));
+      out.push({ text: m[1], bold: true });
+      last = re.lastIndex;
+    }
+    if (last < clean.length) out.push(clean.slice(last));
+    return out.length ? out : [''];
+  }
+  const paragraphs = text => String(text || '').split(/\n\s*\n/).map(p => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean);
+  const cell = v => (typeof v === 'number' ? Charts._number(v) : v == null ? '' : String(v));
+  const numeric = (rows, j) => rows.length > 0 && rows.every(r => {
+    const v = r[j];
+    return v == null || v === '' || typeof v === 'number' || /^[-+<>~≤≥]?\s*[$€£]?\s*[\d.,]+\s*%?$/.test(String(v).trim());
+  });
+
+  function summaryBox(text) {
+    return { table: { widths: ['*'], body: [[{ text: [{ text: 'In short. ', bold: true, color: INK }, ...runs(text)], margin: [10, 7, 10, 7] }]] },
+             layout: { fillColor: () => PANEL, hLineWidth: () => 0, vLineWidth: i => (i === 0 ? 3 : 0), vLineColor: () => TEAL },
+             fontSize: 10.5, color: INK2, lineHeight: 1.35, margin: [0, 2, 0, 14] };
+  }
+  // the key numbers: one row of tiles, all as tall as the tallest, 8 pt apart
+  function numbersRow(nums) {
+    const widths = [], cells = [];
+    nums.forEach((n, i) => {
+      if (i) { widths.push(8); cells.push({ text: '', border: [false, false, false, false] }); }
+      widths.push('*');
+      cells.push({ border: [true, true, true, true], margin: [8, 7, 8, 8], stack: [
+        // a long value gets smaller type, so it stays inside its tile
+        { text: n.value, fontSize: n.value.length <= 9 ? 19 : n.value.length <= 12 ? 15 : 12, bold: true, color: KEYS[i] },
+        { text: n.label, fontSize: 8.5, color: MUTED, margin: [0, 2, 0, 0] }] });
+    });
+    return { margin: [0, 0, 0, 16], table: { widths, body: [cells] },
+             layout: { hLineWidth: () => 0.75, vLineWidth: () => 0.75, hLineColor: () => LINE, vLineColor: () => LINE,
+                       paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 } };
+  }
+  function tableBlock(tb) {
+    const n = tb.columns.length, fs = n > 8 ? 7 : n > 5 ? 8 : 9;
+    const right = tb.columns.map((_, j) => j > 0 && numeric(tb.rows, j));
+    const head = tb.columns.map((c, j) => ({ text: c, bold: true, color: '#ffffff', fillColor: TEAL, alignment: right[j] ? 'right' : 'left' }));
+    const body = tb.rows.map(r => r.map((v, j) => ({ text: cell(v), alignment: right[j] ? 'right' : 'left' })));
+    return { fontSize: fs, color: INK2, margin: [0, 2, 0, 14],
+             table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: n > 4 ? tb.columns.map(() => '*') : tb.columns.map((_, j) => (j === 0 ? '*' : 'auto')), body: [head, ...body] },
+             layout: { fillColor: row => (row > 0 && row % 2 === 0 ? PANEL : null), hLineWidth: (i, node) => (i === 0 || i === 1 ? 0 : i === node.table.body.length ? 0.75 : 0.5),
+                       vLineWidth: () => 0, hLineColor: () => LINE2, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4 } };
+  }
+  function tableBlocks(tb) {
+    const out = [tableBlock(tb)];
+    if (tb.more) {
+      out[0].margin = [0, 2, 0, 4];
+      out.push({ text: `The first ${Charts._number(tb.rows.length)} of ${Charts._number(tb.rows.length + tb.more)} rows; the conversation has the rest.`, style: 'captionSub', margin: [0, 0, 0, 14] });
+    }
+    return out;
+  }
+  function calloutBox(c) {
+    return { margin: [0, 2, 0, 14], table: { widths: ['auto', '*'], body: [[
+      { text: c.value, fontSize: 22, bold: true, color: PURPLE, margin: [10, 6, 4, 6] },
+      { text: runs(c.text), fontSize: 10, color: INK2, margin: [4, 10, 10, 8] }]] },
+      layout: { fillColor: () => '#f6effa', hLineColor: () => '#d7c3e6', vLineColor: () => '#d7c3e6', hLineWidth: () => 0.75, vLineWidth: (i, node) => (i === 0 || i === node.table.widths.length ? 0.75 : 0) } };
+  }
+  function aboutPage(r, meta, ds, level, when) {
+    // it follows the last section, or starts a page when it would begin low on one (see pageBreakBefore)
+    const out = [{ text: 'How it was counted', style: 'h2', id: 'about', margin: [0, 24, 0, 4] },
+      { text: 'Ask wrote this report from the same numbers it gives in the conversation. Every number came from Chiron when the report was made.', style: 'body' }];
+    const part = (title, items, ordered) => {
+      if (!items.length) return;
+      out.push({ text: title, style: 'h3' });
+      out.push({ [ordered ? 'ol' : 'ul']: items.map(x => ({ text: runs(x) })), style: 'list' });
+    };
+    const question = plain(meta && str(meta.question));
+    part('What Ask looked up', r.about.looked_up.length ? r.about.looked_up : question ? [question] : [], true);
+    part('How patients were counted', r.about.counted, false);
+    part('Notes', r.about.notes, false);
+    part('The data', [ds && `Dataset: ${ds}, as of ${when}.`, level && `Access level: ${level.toLowerCase()}. The report holds only what that level allows.`,
+                      question && `Question: “${question}”`].filter(Boolean), false);
+    out.push({ text: 'Check a number', style: 'h3' },
+             { text: 'Answers in the conversation that count patients have a Query button that opens the same patients in Chiron.', style: 'body' });
+    return out;
+  }
+  // the report with its text made printable (see plain); charts are drawn, not typed
+  function printable(r) {
+    const p = plain;
+    return { title: p(r.title) || 'Report', summary: r.summary, numbers: r.numbers.map(n => ({ value: p(n.value), label: p(n.label) })),
+             sections: r.sections.map((x, i) => ({ ...x, heading: p(x.heading) || `Part ${i + 1}`,
+               table: x.table && { ...x.table, columns: x.table.columns.map(p), rows: x.table.rows.map(row => row.map(v => (typeof v === 'number' ? v : p(v)))) },
+               callout: x.callout && { value: p(x.callout.value), text: x.callout.text } })),
+             about: r.about };
+  }
+  async function pdf(r0, meta) {
+    const pm = await load();
+    const r = printable(r0);
+    const when = dateOf(meta && meta.at);
+    const ds = plain(DATASET ? DATASET_NAME : '');
+    const level = LEVEL[(meta && meta.level) || DATASET_LEVEL] || '';   // "De-identified"; "" when not known
+    const images = [];
+    for (const sec of r.sections) images.push(sec.chart ? await Charts._image(sec.chart) : null);
+    const content = [{ text: r.title, style: 'title' },
+      { text: when, style: 'meta' }];
+    if (r.summary) content.push(summaryBox(r.summary));
+    if (r.numbers.length) content.push(numbersRow(r.numbers));
+    // Keeping things together: pdfmake asks pageBreakBefore (below) about each node once, in
+    // order, with the nodes on the next page. A heading moves to the next page when the
+    // first thing under it would start there, or when its chart, short table or callout
+    // would and only a short text (or a low spot on the page) keeps it here; a caption
+    // moves with its chart; a short table or a callout moves whole rather than split.
+    // Tables are bracketed by zero-height marks: pdfmake lays a table's header row (and
+    // rows that must not split) out in a separate block whose nodes all report page 1, so
+    // the table's own nodes cannot say where it is.
+    const mark = id => ({ id, canvas: [{ type: 'line', x1: 0, y1: 0, x2: 0.01, y2: 0, lineWidth: 0.01, lineColor: '#ffffff' }] });
+    const first = {}, later = {}, whole = {}, tight = {}, brief = {};
+    r.sections.forEach((sec, i) => {
+      const id = `sec${i}`;
+      first[id] = []; later[id] = [];
+      let lead = true;   // nothing under the heading yet
+      const keep = ids => { (lead ? first : later)[id].push(...ids); lead = false; };
+      content.push({ text: [{ text: `${i + 1}  `, color: TEAL }, sec.heading], style: 'h2', headlineLevel: 1, id });
+      paragraphs(sec.text).forEach((p, k) => content.push({ text: runs(p), style: 'body', id: `${id}-p${k}` }));
+      if (sec.text && paragraphs(sec.text).length) keep([`${id}-p0`]);
+      brief[id] = paragraphs(sec.text).join(' ').length <= 600;   // about six lines
+      if (sec.chart) {
+        const img = images[i], tall = W * img.h / img.w > TALLEST;
+        // the caption is the chart's title and what it counts; the image cannot split
+        const cap = plain(sec.chart.title || ''), what = plain(Charts._what(sec.chart));
+        if (cap || what) content.push({ text: cap || what, style: 'caption', id: `${id}-cap`, headlineLevel: 2 });
+        if (cap && what) content.push({ text: what, style: 'captionSub' });
+        content.push({ image: img.url, ...(tall ? { fit: [W, TALLEST] } : { width: W }), margin: [0, 6, 0, 12], id: `${id}-img` });
+        keep([`${id}-cap`, `${id}-img`]);
+      }
+      if (sec.table) {
+        const short = sec.table.rows.length <= SHORT;
+        if (short) { content.push(mark(`${id}-tbl`)); whole[`${id}-tbl`] = `${id}-tbl-end`; }
+        else if (lead) tight[id] = true;
+        content.push(...tableBlocks(sec.table), ...(short ? [mark(`${id}-tbl-end`)] : []));
+        if (short) keep([`${id}-tbl`, `${id}-tbl-end`]); else lead = false;
+      }
+      if (sec.callout) {
+        content.push(mark(`${id}-call`), calloutBox(sec.callout), mark(`${id}-call-end`));
+        whole[`${id}-call`] = `${id}-call-end`;
+        keep([`${id}-call`, `${id}-call-end`]);
+      }
+    });
+    if (r.about) content.push(...aboutPage(r, meta, ds, level, when));
+    // Nothing at the top of a page; at the foot, the dataset at the left and the page at the right.
+    const doc = {
+      pageSize: 'LETTER', pageMargins: [44, 50, 44, 54],
+      info: { title: r0.title, subject: (meta && str(meta.question)) || r0.title, creator: 'Ask in Chiron' },
+      footer: (page, pages) => ({ margin: [44, 22, 44, 0], columns: [
+        { text: ds, style: 'foot' },
+        { text: `Page ${page} of ${pages}`, style: 'foot', alignment: 'right', width: 'auto' }] }),
+      content,
+      // keeping things together (see the marks above)
+      pageBreakBefore: (node, after, next) => {
+        if (!node.id) return false;
+        if (node.id === 'about') return node.startPosition.verticalRatio > 0.5;
+        const starts = id => next.some(n => n.id === id && n.startPosition.pageNumber > node.startPosition.pageNumber);
+        if (node.headlineLevel === 1) {
+          const low = node.startPosition.verticalRatio;
+          return first[node.id].some(starts) || ((brief[node.id] ? low > 0.08 : low > 0.55) && later[node.id].some(starts))
+            || (low > 0.85 && !!tight[node.id]);
+        }
+        if (node.headlineLevel === 2) return starts(node.id.replace(/-cap$/, '-img'));
+        return !!whole[node.id] && starts(whole[node.id]);
+      },
+      styles: {
+        title: { fontSize: 22, bold: true, color: INK, margin: [0, 0, 0, 4] },
+        meta: { fontSize: 9, color: MUTED, margin: [0, 0, 0, 14] },
+        h2: { fontSize: 13.5, bold: true, color: INK, margin: [0, 10, 0, 4] },
+        h3: { fontSize: 10.5, bold: true, color: INK, margin: [0, 10, 0, 3] },
+        body: { fontSize: 10, color: INK2, lineHeight: 1.35, margin: [0, 0, 0, 6] },
+        list: { fontSize: 10, color: INK2, lineHeight: 1.35, margin: [0, 0, 0, 4] },
+        caption: { fontSize: 10, bold: true, color: INK, margin: [0, 4, 0, 0] },
+        captionSub: { fontSize: 8.5, color: MUTED },
+        foot: { fontSize: 8, color: MUTED },
+      },
+      defaultStyle: { font: 'Roboto', fontSize: 10, color: INK },
+    };
+    return await new Promise((ok, fail) => {
+      try { pm.createPdf(doc).getBlob(blob => ok(blob)); } catch (err) { fail(err); }
+    });
+  }
+  // The file is named after its report, as a person would save it ("Asthma by gender,
+  // Synthea 300.pdf"): the title, with what no system allows in a file name changed (a colon
+  // to " -", a slash to "-", the rest dropped), no leading or trailing dot or space, at most
+  // about 120 characters cut at a word, and never a name Windows keeps for itself.
+  function fileName(r) {
+    let n = plain(r.title).replace(/\s*:\s*/g, ' - ').replace(/[\/\\]+/g, '-').replace(/[*?"<>|\u0000-\u001f\u007f]+/g, ' ')
+      .replace(/\s+/g, ' ').trim().replace(/^[.\s-]+|[.\s]+$/g, '');
+    if (n.length > 120) {
+      n = n.slice(0, 120);
+      const cut = n.lastIndexOf(' ');
+      n = (cut > 60 ? n.slice(0, cut) : n).replace(/[\s.,;:-]+$/, '');
+    }
+    if (!n) n = 'Report';
+    else if (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(n)) n += ' report';
+    return n + '.pdf';
+  }
+
+  // The first page in miniature for the card: the page as the PDF lays it out (title, date,
+  // the parts in order, the first charts drawn from their numbers), at full size and scaled
+  // down by CSS. Decoration only: the title and the buttons say what the card is.
+  const SVG = 'http://www.w3.org/2000/svg';
+  function miniChart(s) {
+    const W = 524, H = 196, base = H - 22, top = 12;
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const add = (tag, attrs) => { const n = document.createElementNS(SVG, tag); Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v)); svg.appendChild(n); };
+    const series = s.series.slice(0, 3), LINES = ['#00897b', '#7b1fa2', '#ef6c00'];
+    const max = Math.max(1e-9, ...series.flatMap(sr => sr.values.filter(v => v != null).map(Math.abs)));
+    if (s.type === 'line') {
+      add('line', { x1: 0, y1: base, x2: W, y2: base, stroke: '#e3e7ea', 'stroke-width': 1 });
+      series.forEach((sr, q) => {
+        const n = sr.values.length;
+        const pts = sr.values.map((v, k) => (v == null ? null : `${n > 1 ? k / (n - 1) * W : W / 2},${base - Math.max(0, v) / max * (base - top)}`)).filter(Boolean);
+        if (pts.length) add('polyline', { points: pts.join(' '), fill: 'none', stroke: LINES[q], 'stroke-width': 3, 'stroke-linejoin': 'round' });
+      });
+    } else if (s.parts || s.n > 12) {
+      const n = Math.min(s.n, 24), row = H / n;
+      for (let k = 0; k < n; k++) {
+        const v = Math.max(0, series[0].values[k] || 0);
+        add('rect', { x: 110, y: k * row + row * .18, width: v / max * (W - 170), height: row * .64, rx: 2, fill: Charts._color(s, k) });
+        add('rect', { x: 0, y: k * row + row * .36, width: 92, height: row * .28, rx: 1, fill: '#e3e7ea' });
+      }
+    } else {
+      add('line', { x1: 0, y1: base, x2: W, y2: base, stroke: '#e3e7ea', 'stroke-width': 1 });
+      const n = s.n, step = W / n, g = series.length, bw = Math.min(30, step * .62 / g);
+      for (let k = 0; k < n; k++) {
+        series.forEach((sr, q) => {
+          const h = Math.max(0, sr.values[k] || 0) / max * (base - top);
+          if (h > 0) add('rect', { x: step * k + step / 2 - g * bw / 2 + q * bw, y: base - h, width: Math.max(1, bw - 2), height: h, rx: 3, fill: g > 1 ? LINES[q] : Charts._color(s, k) });
+        });
+        add('rect', { x: step * k + step / 2 - 18, y: base + 8, width: 36, height: 5, rx: 1, fill: '#e3e7ea' });
+      }
+    }
+    return svg;
+  }
+  function miniPage(r, meta) {
+    const pg = el('div', 'ar-pg'), body = el('div', 'ar-pg-body');
+    body.append(el('div', 'ar-pg-t', r.title), el('div', 'ar-pg-m', dateOf(meta && meta.at)));
+    if (r.summary) body.appendChild(el('div', 'ar-pg-short', r.summary.replace(/\*\*/g, '')));
+    if (r.numbers.length) {
+      const tiles = el('div', 'ar-pg-tiles');
+      r.numbers.forEach((n, i) => { const t = el('div'); const b = el('b', null, n.value); b.style.color = KEYS[i]; t.append(b, el('span', null, n.label)); tiles.appendChild(t); });
+      body.appendChild(tiles);
+    }
+    r.sections.slice(0, 6).forEach((sec, i) => {
+      const h = el('div', 'ar-pg-h'); h.append(el('i', null, String(i + 1)), sec.heading);
+      body.appendChild(h);
+      paragraphs(sec.text).slice(0, 2).forEach(p => body.appendChild(el('div', 'ar-pg-p', p.replace(/\*\*/g, ''))));
+      if (sec.chart) body.append(el('div', 'ar-pg-cap', sec.chart.title || ''), miniChart(sec.chart));
+      if (sec.table) {
+        const tb = el('div', 'ar-pg-table');
+        tb.appendChild(el('div', 'hd'));
+        sec.table.rows.slice(0, 6).forEach(() => tb.appendChild(el('div')));
+        body.appendChild(tb);
+      }
+      if (sec.callout) { const c = el('div', 'ar-pg-call'); c.append(el('b', null, sec.callout.value), el('span', null, sec.callout.text.replace(/\*\*/g, ''))); body.appendChild(c); }
+    });
+    const foot = el('div', 'ar-pg-foot');
+    foot.append(el('span', null, DATASET ? DATASET_NAME : ''), el('span', null, 'Page 1'));
+    pg.append(body, foot);
+    return pg;
+  }
+
+  // One report: the first page in miniature, the title, Download PDF and Open.
+  function card(spec, meta) {
+    const box = el('figure', 'ar');
+    const r = read(spec, meta && meta.asked);
+    if (!r) {
+      box.classList.add('ar-bad');
+      const icon = el('div', 'ar-icon');
+      icon.innerHTML = ICON;
+      box.append(icon, el('div', 'ar-note', 'This report could not be read, so there is no PDF. Asking again usually fixes it.'));
+      return box;
+    }
+    const thumb = el('div', 'ar-thumb');
+    thumb.setAttribute('aria-hidden', 'true');
+    thumb.appendChild(miniPage(r, meta));
+    const btns = el('div', 'ar-btns');
+    const dl = el('button', 'chiron-link'), open = el('button', 'chiron-link load', 'Open');
+    dl.innerHTML = DOWNLOAD;
+    dl.appendChild(document.createTextNode('Download PDF'));
+    dl.type = 'button'; open.type = 'button';
+    const err = el('div', 'ar-err');
+    err.hidden = true;
+    let made = null;        // the PDF, made once for this card
+    const make = () => (made = made || pdf(r, meta).catch(e => { made = null; throw e; }));
+    const busy = on => { dl.disabled = on; open.disabled = on; box.classList.toggle('ar-busy', on); };
+    const fail = e => {
+      err.hidden = false;
+      err.textContent = /library/.test((e && e.message) || '')
+        ? 'The PDF could not be made: its library did not load. Check the connection and try again.'
+        : 'The PDF could not be made. Try again; if it keeps failing, use Report a problem.';
+    };
+    dl.onclick = async () => {
+      busy(true); err.hidden = true;
+      try { Charts._save(await make(), fileName(r)); } catch (e) { fail(e); } finally { busy(false); }
+    };
+    open.onclick = async () => {
+      // the tab opens now, while the click still counts, and gets the PDF once it is made
+      const tab = window.open('', '_blank');
+      if (tab) {
+        try { tab.opener = null; tab.document.title = 'Making the PDF\u2026'; tab.document.body.style.cssText = 'font: 15px system-ui, sans-serif; color: #6b7780; padding: 24px;'; tab.document.body.textContent = 'Making the PDF\u2026'; } catch (_) { /* a tab it cannot write to still gets the PDF */ }
+      }
+      busy(true); err.hidden = true;
+      try {
+        const blob = await make();
+        if (tab && !tab.closed) {
+          const url = URL.createObjectURL(blob);
+          tab.location.href = url;
+          setTimeout(() => URL.revokeObjectURL(url), 120000);
+        } else Charts._save(blob, fileName(r));
+      } catch (e) { if (tab) tab.close(); fail(e); } finally { busy(false); }
+    };
+    btns.append(dl, open);
+    box.append(thumb, el('div', 'ar-title', r.title), btns, err);
+    return box;
+  }
+
+  return { card, _read: read, _pdf: pdf, _name: fileName };
 })();
 
 // --- traces --------------------------------------------------------------------------
@@ -3816,6 +4343,14 @@ function postBody(b, turn, data, ui, debug) {
     box.appendChild(lazy(ui, 'chart' + i, 'Chart spec', () => pre(ch.ok ? json(ch.spec) : ch.source)));
     b.appendChild(block('Chart', box));
   });
+  (p.reports || []).forEach((rp, i) => {
+    const box = el('div');
+    const ok = rp.ok && rp.spec && typeof rp.spec === 'object';
+    box.appendChild(kv([['PDF report ' + (i + 1), ok ? (rp.spec.title || 'untitled') : 'not readable: no PDF', ok ? null : 'warn']]));
+    if (rp.issues && rp.issues.length) { const ul = el('ul', 'cd'); rp.issues.forEach(x => ul.appendChild(el('li', 'no-t', x))); box.appendChild(ul); }
+    box.appendChild(lazy(ui, 'report' + i, 'Report spec', () => pre(ok ? json(rp.spec) : rp.source)));
+    b.appendChild(block('Report', box));
+  });
   const td = p.tidy || {};
   if (td.changed) b.appendChild(kv([['Tidied', [
     td.links_removed ? `${td.links_removed} link(s) into Chiron removed` : '',
@@ -3958,6 +4493,7 @@ function start(d) {
   setupModels(d);
   const match = d && (d.datasets || []).find(x => x.id === DATASET);
   DATASET_NAME = (match && match.name) || DATASET || 'this dataset';
+  DATASET_LEVEL = (match && match.access_level) || '';
   renderWho(d, match);
   renderUsageLink(d);
   loadMyUsage();

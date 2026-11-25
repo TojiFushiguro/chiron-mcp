@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask report checks</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  body { margin: 0; background: #eef1f3; color: #1d2328; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  #summary { position: sticky; top: 0; z-index: 9; background: #1d2328; color: #fff; padding: 10px 18px; font-weight: 600; }
+  #summary.fail { background: #b3261e; } #summary.pass { background: #2e7d32; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 16px; padding: 16px; }
+  .case { background: #fff; border: 1px solid #d9dfe3; border-radius: 12px; padding: 12px 14px; min-width: 0; }
+  .case.narrow { max-width: 360px; }
+  .case h3 { font-size: 13px; margin: 0 0 8px; }
+  .res { font: 11.5px/1.5 ui-monospace, Menlo, monospace; margin-top: 4px; }
+  .res .bad { color: #b3261e; font-weight: 700; } .res .ok { color: #2e7d32; }
+  .pages { display: flex; gap: 8px; overflow-x: auto; margin-top: 8px; padding-bottom: 4px; }
+  .pages canvas { border: 1px solid #d9dfe3; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); flex: none; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; padding: 8px; } }
+</style>
+</head>
+<body>
+<div id="summary">Running&hellip;</div>
+<div class="grid" id="grid"></div>
+<script>
+// Ask's report code against the edge cases a model's report block can bring: reading it,
+// its card, the PDF (built with the real pdfmake, loaded the way the page loads it, then
+// read back with pdf.js: its pages, its text, where the footer sits, what must not be in
+// it) and the card's buttons. Serve the repository root (python3 -m http.server) and open
+// /tests/reports_check.html. The page reads chiron_mcp/webui/index.html and takes its
+// styles and its chart and report code (from "const ISO_DAY" to "// --- traces"); the bar
+// at the top turns green or red, and window.reportChecks holds the results.
+(async () => {
+  const src = await (await fetch('../chiron_mcp/webui/index.html', { cache: 'no-store' })).text();
+  const css = src.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const pick = re => (css.match(re) || [''])[0];
+  const style = document.createElement('style');
+  style.textContent = [pick(/:root \{[\s\S]*?\n  \}/), pick(/\.chiron-link \{[\s\S]*?\.chiron-link\.gone \{[^}]*\}/),
+    pick(/\/\* a report \(see Reports\)[\s\S]*?\.ar-btns \{ margin-top: 12px; \}\n  \}/)].join('\n');
+  if (!/\.ar-thumb \{/.test(style.textContent)) throw new Error('the report styles were not found in index.html');
+  document.head.appendChild(style);
+  window.DATASET = 'synthea-10k'; window.DATASET_NAME = 'Synthea 10k'; window.DATASET_LEVEL = 'deid';
+  window.el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  const code = src.slice(src.indexOf('const ISO_DAY = '), src.indexOf('// --- traces'));
+  const { Charts, Reports } = new Function(code + '\nreturn { Charts, Reports };')();
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const flat = s => String(s).replace(/\s+/g, ' ').trim();
+  const squash = s => String(s).replace(/\s+/g, '');
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const rr0 = (spec, asked) => Reports._read(spec, asked);
+
+  // --- the cases --------------------------------------------------------------------------
+  const AGE = { type: 'bar', title: 'Patients with type 2 diabetes by age group', label: 'Patients',
+    data: [{ x: '18-34', y: 41 }, { x: '35-49', y: 128 }, { x: '50-64', y: 236 }, { x: '65-79', y: 203 }, { x: '80+', y: 78 }] };
+  const YEARS = { type: 'line', title: 'New type 2 diabetes diagnoses per year', label: 'Patients',
+    data: [14, 17, 15, 19, 21, 18, 23, 25, 22, 27, 29, 26, 31, 33, 30, 35, 37, 34, 39, 41, 33, 38, 42, 44].map((y, i) => ({ x: String(2000 + i), y })) };
+  const GENDER = { type: 'doughnut', title: 'Patients with type 2 diabetes by gender', label: 'Patients', data: [{ x: 'Female', y: 352 }, { x: 'Male', y: 334 }] };
+  const months = Array.from({ length: 12 }, (_, i) => `2023-${String(i + 1).padStart(2, '0')}`);
+  const BP = { type: 'line', title: 'Blood pressure of patient 42 over 2023', label: 'mm[Hg]', x: months,
+    series: [{ label: 'Systolic', y: [138, 135, 141, 132, 130, 128, 131, 127, 125, 126, 124, 122] }, { label: 'Diastolic', y: [88, 86, 90, 85, 84, 82, 83, 81, 80, 80, 79, 78] }] };
+  const conds = Array.from({ length: 40 }, (_, i) => ({ x: `Condition number ${i + 1} (disorder)`, y: 4000 - i * 97 }));
+  const TALL = { type: 'bar', title: 'Patients by condition (top 40)', label: 'Patients', data: conds };
+  const META = { question: 'Make me a PDF report on type 2 diabetes', at: Date.UTC(2026, 0, 15, 12), level: 'deid' };
+  const DAY = 'Jan 15, 2026';
+  const FULL = {
+    title: 'Type 2 diabetes in Synthea 10k',
+    summary: '**686** of the 10,000 patients (6.9%) have type 2 diabetes. Most are 50 to 79.',
+    numbers: [{ value: '686', label: 'patients with type 2 diabetes' }, { value: 12345, label: 'encounters for it' },
+              { value: '6.9%', label: 'of all patients' }, { value: '179', label: 'started metformin within 90 days' }],
+    sections: [
+      { heading: 'Who has it', text: 'Most patients with type 2 diabetes are 50 to 79.\n\nFew are under 35.', chart: AGE, table: true },
+      { heading: 'New diagnoses over time', text: 'New diagnoses rose after 2010.', chart: YEARS },
+      { heading: 'Treatment', text: 'Metformin is the usual first medicine.', callout: { value: '179', text: 'started **metformin** within 90 days of diagnosis' } },
+      { heading: 'By gender', text: 'About even.', chart: GENDER },
+      { heading: 'Other conditions', table: { columns: ['Condition', 'Patients', 'Share'], rows: [['Hypertension', 412, '60.1%'], ['Prediabetes', 301, '43.9%'], ['Obesity', 288, '42.0%']] } },
+    ],
+    about: { looked_up: ['How many patients have type 2 diabetes?', 'How old are they?'],
+             counted: ['Type 2 diabetes: the condition Diabetes mellitus type 2 (disorder), once per patient'], notes: ['Synthea is synthetic data.'] },
+  };
+  const rows1500 = Array.from({ length: 1500 }, (_, i) => [`Patient ${i + 1}`, i + 1]);
+  const SYM = 'Rates rose 2019 → 2023 ✓ ⚠️ done 🎉 ≥ 65 years, café, μg, “quoted” – en dash … ellipsis';
+  const CASES = [
+    { name: 'full report', spec: FULL, meta: META, pages: [3, 4], images: 3, all: true,
+      thumb: { charts: 3, tiles: 4, short: true },
+      has: ['Type 2 diabetes in Synthea 10k', 'In short. 686 of the 10,000 patients (6.9%) have type 2 diabetes.', '12,345', 'encounters for it', '6.9%',
+            '1 Who has it', '2 New diagnoses over time', '3 Treatment', '4 By gender', '5 Other conditions', 'Hypertension', '60.1%', '43.9%',
+            'started metformin within 90 days of diagnosis', 'Patients with type 2 diabetes by age group', 'Few are under 35.', '18-34', '236',
+            'How it was counted', 'What Ask looked up', 'How old are they?', 'How patients were counted', 'Synthea is synthetic data.',
+            'Dataset: Synthea 10k, as of Jan 15, 2026.', 'Access level: de-identified.', 'Question: “Make me a PDF report on type 2 diabetes”',
+            'Check a number'],
+      not: ['Patients · Synthea 10k', '686 patients · Synthea 10k', 'De-identified access', 'About these numbers'],
+      together: [['1 Who has it', 'Patients with type 2 diabetes by age group'], ['2 New diagnoses over time', 'New type 2 diabetes diagnoses per year'],
+                 ['4 By gender', 'Patients with type 2 diabetes by gender'], ['5 Other conditions', 'Hypertension'], ['5 Other conditions', 'Obesity']],
+      read: r => [['4 numbers', r.numbers.length === 4], ['12345 shown as 12,345', r.numbers[1].value === '12,345'],
+                  ['table: true gives the chart\'s rows', r.sections[0].table && same(r.sections[0].table.columns, ['Category', 'Patients']) && r.sections[0].table.rows.length === 5]] },
+    { name: 'summary only', spec: { title: 'Asthma in brief', summary: 'Asthma: 1,234 patients.' }, meta: META, pages: [1, 1], images: 0,
+      thumb: { charts: 0, tiles: 0, short: true }, has: ['In short. Asthma: 1,234 patients.', DAY], not: ['How it was counted', 'What Ask looked up', 'Access level', 'De-identified'] },
+    { name: 'numbers written as numbers', spec: { title: 'Counts', numbers: [{ value: 686, label: 'patients' }, { value: 12345.678, label: 'days' }, { value: 0, label: 'deaths' }, { value: 0.25, label: 'ratio' }] },
+      meta: META, pages: [1, 2], images: 0, has: ['12,345.7', 'deaths'],
+      read: r => [['values as text', same(r.numbers.map(n => n.value), ['686', '12,345.7', '0', '0.25']), r.numbers.map(n => n.value).join('|')]] },
+    { name: 'long key numbers stay in their tiles', spec: { title: 'Long values', numbers: [{ value: '1,234,567,890', label: 'records' }, { value: '12,345.67 mg/dL', label: 'average' },
+        { value: 'Hypertension and diabetes', label: 'most common pair' }, { value: '98.6%', label: 'share' }] }, meta: META, pages: [1, 2], has: ['1,234,567,890', '12,345.67 mg/dL'], tiles: true },
+    { name: 'six numbers: the first four', spec: { title: 'Six', numbers: [1111, 2222, 3333, 4444, 5555, 6666].map(v => ({ value: String(v), label: 'n' })) },
+      meta: META, pages: [1, 2], has: ['4444'], not: ['5555', '6666'], read: r => [['4 kept', r.numbers.length === 4]] },
+    { name: 'ten sections', spec: { title: 'Ten parts', sections: Array.from({ length: 10 }, (_, i) => ({ heading: `Part number ${i + 1}`, text: `Text of part ${i + 1}.` })) },
+      meta: META, pages: [1, 3], chipCount: 11, has: ['10 Part number 10', 'Text of part 10.'] },
+    { name: 'odd sections are left out', spec: { title: 'Odd', sections: [null, 'text', 42, [], { heading: '' }, { text: 'no heading here' }] },
+      meta: META, pages: [1, 2], has: ['1 Part 1', '2 Part 2', 'no heading here'],
+      read: r => [['two sections', r.sections.length === 2]] },
+    { name: 'sections and numbers given as one object', spec: { title: 'One of each', numbers: { value: '5', label: 'patients' }, sections: { heading: 'Single', text: 'Alone.' } },
+      meta: META, pages: [1, 2], has: ['1 Single', 'Alone.'], read: r => [['one number', r.numbers.length === 1], ['one section', r.sections.length === 1]] },
+    { name: 'a chart with no data is left out', spec: { title: 'Empty chart', sections: [{ heading: 'Nothing to draw', text: 'See text.', chart: { type: 'bar', data: [] }, table: true }] },
+      meta: META, pages: [1, 2], images: 0, thumb: { charts: 0 }, has: ['Nothing to draw'],
+      read: r => [['no chart', r.sections[0].chart === null], ['no table', r.sections[0].table === null]] },
+    { name: 'table rows that do not fit the columns', spec: { title: 'Ragged', sections: [{ heading: 'T', table: { columns: ['A', 'B', 'C'], rows: [['a1'], ['b1', 'b2', 'b3', 'b4'], 'notarow', [null, { x: 1 }, true]] } }] },
+      meta: META, pages: [1, 2], has: ['b3', 'true'], not: ['b4', 'notarow', '[object'],
+      read: r => [['rows padded and cut', same(r.sections[0].table.rows, [['a1', '', ''], ['b1', 'b2', 'b3'], ['', '', 'true']])]] },
+    { name: 'a long table is cut at 1,000 rows', spec: { title: 'Patient list', sections: [{ heading: 'Patients', table: { columns: ['Patient', 'Number'], rows: rows1500 } }] },
+      meta: META, pages: [10, 60], has: ['The first 1,000 of 1,500 rows; the conversation has the rest.', 'Patient 1000'], not: ['Patient 1001'],
+      read: r => [['1,000 kept', r.sections[0].table.rows.length === 1000 && r.sections[0].table.more === 500]] },
+    { name: 'a wide table', spec: { title: 'Wide', sections: [{ heading: 'Twelve columns', table: { columns: Array.from({ length: 12 }, (_, i) => `C${i + 1}`), rows: Array.from({ length: 5 }, (_, r) => Array.from({ length: 12 }, (_, c) => r * 100 + c)) } }] },
+      meta: META, pages: [1, 2], has: ['C12', '411'] },
+    { name: 'HTML tags are dropped', spec: { title: '<img src=x onerror="window.pwned=1">Report', sections: [{ heading: '<script>window.pwned=2<\/script>', text: '<b>bold?</b> <img src=y onerror="window.pwned=3"> and 3 < 5 > 2' }] },
+      meta: META, pages: [1, 2], title: 'Report', has: ['1 window.pwned=2', 'bold? and 3 < 5 > 2'], not: ['<img', '<b>', '<script', 'onerror'], markup: true },
+    { name: 'symbols the font lacks', spec: { title: 'Symbols 📊', summary: SYM, sections: [{ heading: 'Check ✔ and ❌', text: 'Up ↑ and down ↓; ★ rated' }] },
+      meta: META, pages: [1, 2], has: ['Symbols', '2019 to 2023 yes Note: done ≥ 65 years, café, μg, “quoted” – en dash … ellipsis', 'Check yes and no', 'Up up and down down; • rated'],
+      not: ['🎉', '→', '✓', '✔', '❌', '⚠', '📊', '↑', '★'] },
+    { name: 'markdown in the text', spec: { title: '**Bold** title', sections: [{ heading: '## Heading marks', text: '**686** patients. See [the cohort](https://example.org/query/1) and `code`.\n\n# A heading line\nSecond line of the same paragraph.' }] },
+      meta: META, pages: [1, 2], has: ['Bold title', '1 Heading marks', '686 patients. See the cohort and code.', 'A heading line Second line of the same paragraph.'], not: ['](', '`', '**', '##'] },
+    { name: 'a very long title', narrow: true, spec: { title: 'A very long report title that goes on and on '.repeat(6).trim(), summary: 'Short.' },
+      meta: META, pages: [1, 2], has: ['A very long report title that goes on and on '.repeat(6).trim()] },
+    { name: 'no title', spec: { summary: 'Five patients.' }, meta: META, pages: [1, 2], title: 'Report', has: ['Report', 'In short. Five patients.'] },
+    { name: 'a tall chart fits its page', spec: { title: 'Forty conditions', sections: [{ heading: 'Top 40', chart: TALL }] }, meta: META, pages: [1, 3], images: 1, has: ['Patients by condition (top 40)'] },
+    { name: 'two series over dates, with its table', spec: { title: 'Blood pressure', sections: [{ heading: 'Readings', chart: BP, table: true }] }, meta: META, pages: [1, 3], images: 1,
+      has: ['Systolic', 'Diastolic', '138'], read: r => [['table columns', same(r.sections[0].table.columns, ['Date', 'Systolic', 'Diastolic'])]] },
+    { name: 'how it was counted, when asked, falls back to the question', spec: { title: 'Fallback', summary: 's', about: { counted: ['Asthma: the condition Asthma, once per patient'] } },
+      meta: { question: 'How many patients have asthma?', at: META.at, level: 'phi' },
+      pages: [1, 2], has: ['How it was counted', 'What Ask looked up', 'How many patients have asthma?', 'Access level: full.', 'Asthma: the condition Asthma, once per patient'] },
+    { name: 'not asked: no closing part', spec: { title: 'Plain', sections: [{ heading: 'Patients', text: '816 patients have asthma.' }] }, meta: { question: 'How many patients have asthma?', at: META.at, level: 'agg' },
+      pages: [1, 1], has: ['1 Patients', '816 patients have asthma.', DAY], not: ['How it was counted', 'How many patients have asthma?', 'Access level', 'Aggregate'] },
+    { name: 'aggregate-only access, when asked how it was counted', spec: { title: 'Agg', summary: 's', about: { notes: ['Counts under 11 are hidden.'] } }, meta: { question: 'q', at: META.at, level: 'agg' }, pages: [1, 2],
+      has: ['Access level: aggregate-only.', 'Counts under 11 are hidden.'] },
+    { name: '"about" written inside a section goes to the end', spec: { title: 'Misplaced', sections: [{ heading: 'Patients', text: '20 patients.', about: { counted: ['Asthma, once per patient'], notes: ['n1'] } },
+        { heading: 'Second', text: 'More.', about: { counted: ['Asthma, once per patient'] } }] },
+      meta: META, pages: [1, 2], has: ['How it was counted', 'Asthma, once per patient', 'n1', '2 Second'], order: ['2 Second', 'How it was counted'],
+      read: r => [['joined and deduplicated', r.about && r.about.counted.length === 1 && r.about.notes.length === 1]] },
+    { name: 'paragraphs', spec: { title: 'Paragraphs', sections: [{ heading: 'P', text: 'Para one line one\nline two\n\nPara two' }] }, meta: META, pages: [1, 2], has: ['Para one line one line two', 'Para two'] },
+    { name: 'zero and empty values', spec: { title: 'Zero', numbers: [{ value: 0, label: 'deaths' }, { value: '', label: 'dropped' }], sections: [{ heading: 'Z', callout: { value: 0, text: 'none at all' } }] },
+      meta: META, pages: [1, 2], has: ['deaths', 'none at all'], not: ['dropped'], read: r => [['zero kept, empty dropped', r.numbers.length === 1 && r.numbers[0].value === '0'], ['zero callout kept', !!r.sections[0].callout]] },
+    { name: 'no dataset', spec: { title: 'No dataset', summary: 's' }, meta: META, pages: [1, 2], noDataset: true, not: ['Synthea 10k'] },
+    { name: 'page breaks: mixed sections', spec: { title: 'Page breaks', summary: 'Many sections of different sizes.',
+        sections: Array.from({ length: 8 }, (_, i) => ({
+          heading: `Mixed ${i + 1}`,
+          text: `Section ${i + 1} opens here. ` + 'This sentence fills the section out a little more. '.repeat([2, 9, 1, 14, 4, 0, 7, 3][i]),
+          ...(i % 3 === 0 ? { chart: { ...AGE, title: `Chart of section ${i + 1}` } } : {}),
+          ...(i % 3 === 1 ? { table: { columns: ['Row', 'Value'], rows: Array.from({ length: 12 }, (_, k) => [`S${i + 1} row ${k + 1}`, k * 7]) } } : {}),
+          ...(i % 3 === 2 ? { callout: { value: String(100 + i), text: `callout of section ${i + 1}` } } : {}),
+          ...(i === 6 ? { table: true } : {}) })) },
+      meta: META, pages: [4, 9] },
+    { name: 'page breaks: tables first', spec: { title: 'Tables first', summary: 'Short tables right under their headings. ' + 'More words to push things down. '.repeat(30),
+        sections: Array.from({ length: 6 }, (_, i) => ({ heading: `Table ${i + 1}`, table: { columns: ['Row', 'Value'], rows: Array.from({ length: 6 + i * 2 }, (_, k) => [`T${i + 1} row ${k + 1}`, k]) } })) },
+      meta: META, pages: [2, 5] },
+    { name: 'extras nobody asked for are left out', spec: { title: 'Asthma by gender', summary: 'Twenty patients.', numbers: [{ value: '20', label: 'patients' }],
+        about: { counted: ['Asthma, once per patient'] }, sections: [{ heading: 'By gender', text: '11 male and 9 female.', chart: GENDER, table: true, callout: { value: '11', text: 'are male' } }] },
+      meta: { ...META, asked: 'Make a PDF of the asthma patients by gender' }, pages: [1, 1], images: 1, thumb: { charts: 1, tiles: 0, short: false },
+      has: ['1 By gender', '11 male and 9 female.'], not: ['In short', 'Twenty patients', 'How it was counted', 'Category', 'are male'],
+      read: r => [['no summary, numbers, about, table or callout', !r.summary && !r.numbers.length && !r.about && !r.sections[0].table && !r.sections[0].callout]] },
+    { name: 'a list is what was asked for, not an extra', spec: { title: 'Type 2 diabetes patients on metformin', summary: 'Nineteen patients.', numbers: [{ value: '19', label: 'patients' }],
+        about: { counted: ['once per patient'] }, sections: [{ heading: 'Patient details', text: 'One row per patient, in Chiron\'s order.',
+          table: { columns: ['Birthdate', 'Gender', 'Race', 'Ethnicity', 'Marital status', 'City', 'County', 'Income', 'Death date'],
+                   rows: Array.from({ length: 19 }, (_, k) => [`19${50 + k}-03-14`, k % 2 ? 'F' : 'M', 'white', 'nonhispanic', 'M', `City ${k + 1}`, 'Middlesex County', 30000 + k * 1000, k === 4 ? '2020-01-02' : '']) } }] },
+      meta: { ...META, asked: 'make a pdf of all the 19 patients info' }, pages: [1, 2], images: 0, thumb: { charts: 0, tiles: 0, short: false },
+      has: ['Birthdate', 'Death date', 'City 1', 'City 19', '1968-03-14', '48,000'], not: ['In short', 'How it was counted', 'Nineteen patients'],
+      read: r => [['the list stays, the extras go', r.sections[0].table && r.sections[0].table.rows.length === 19 && !r.summary && !r.numbers.length && !r.about]] },
+    { name: 'a table beside a chart is an extra', spec: { title: 'Asthma by gender', sections: [{ heading: 'By gender', chart: GENDER, table: { columns: ['Gender', 'Patients'], rows: [['Female', 352], ['Male', 334]] } }] },
+      meta: { ...META, asked: 'Make a PDF of the asthma patients by gender' }, pages: [1, 1], images: 1, not: ['Gender Patients'],
+      read: r => [['dropped', r.sections[0].table === null]] },
+    { name: 'extras asked for earlier in the conversation stay', spec: { title: 'Asthma by gender', summary: 'Twenty patients.', numbers: [{ value: '20', label: 'patients' }],
+        about: { counted: ['Asthma, once per patient'] }, sections: [{ heading: 'By gender', text: '11 male and 9 female.', chart: GENDER }] },
+      meta: { ...META, asked: 'Make a PDF of the asthma patients by gender and race\nAdd a short summary\nRemove the race part' }, pages: [1, 1], thumb: { short: true, tiles: 0 },
+      has: ['In short. Twenty patients.'], not: ['How it was counted'], read: r => [['the summary stays, the rest goes', !!r.summary && !r.numbers.length && !r.about]] },
+    { name: 'extras stay when they are all there is', spec: { title: 'Asthma', summary: 'Twenty patients have asthma.', numbers: [{ value: '20', label: 'patients' }] },
+      meta: { ...META, asked: 'Make a PDF on asthma' }, pages: [1, 1], has: ['Twenty patients have asthma.', '20'], read: r => [['kept', !!r.summary && r.numbers.length === 1]] },
+    { name: 'unreadable JSON', spec: { __bad: true }, bad: true },
+    { name: 'a list is not a report', spec: [1, 2], bad: true },
+    { name: 'text is not a report', spec: 'report', bad: true },
+    { name: 'nothing in it', spec: { title: 'Empty', sections: [], numbers: [], summary: '' }, bad: true },
+  ];
+
+  // --- reading a PDF back --------------------------------------------------------------------
+  async function readPdf(blob, holder, upTo) {
+    const data = new Uint8Array(await blob.arrayBuffer());
+    const head = String.fromCharCode(...data.slice(0, 5));
+    const doc = await pdfjsLib.getDocument({ data: data.slice() }).promise;
+    const pages = [];
+    let images = 0;
+    for (let i = 1; i <= doc.numPages; i++) {
+      const p = await doc.getPage(i);
+      const tc = await p.getTextContent();
+      const ops = await p.getOperatorList();
+      const pimg = ops.fnArray.filter(f => f === pdfjsLib.OPS.paintImageXObject).length;
+      images += pimg;
+      const [, , pw, ph] = p.view;
+      pages.push({ w: pw, h: ph, images: pimg, text: flat(tc.items.map(x => x.str).join(' ')),
+                   items: tc.items.filter(x => x.str.trim()).map(x => ({ s: x.str, x: x.transform[4], y: x.transform[5], w: x.width })) });
+      if (holder && i <= upTo) {
+        const vp = p.getViewport({ scale: 0.84 });
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        cv.style.width = Math.round(vp.width / 2) + 'px'; cv.style.height = Math.round(vp.height / 2) + 'px';
+        holder.appendChild(cv);
+        await p.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      }
+    }
+    const meta = await doc.getMetadata();
+    return { head, n: doc.numPages, pages, images, all: pages.map(p => p.text).join(' '), info: (meta && meta.info) || {}, size: data.length };
+  }
+
+  const results = [];
+  const grid = document.getElementById('grid');
+  function caseBox(name, narrow) {
+    const c = el('div', 'case' + (narrow ? ' narrow' : ''));
+    c.appendChild(el('h3', null, name));
+    const slot = el('div'), pages = el('div', 'pages'), res = el('div', 'res');
+    c.append(slot, pages, res);
+    grid.appendChild(c);
+    const add = (pass, msg) => { res.appendChild(el('div', pass ? 'ok' : 'bad', (pass ? 'ok   ' : 'FAIL ') + msg)); results.push({ name, pass: !!pass, msg }); };
+    return { c, slot, pages, add };
+  }
+  // downloads are caught, not saved
+  const downloads = [];
+  document.addEventListener('click', e => {
+    const a = e.target && e.target.closest && e.target.closest('a[download]');
+    if (a) { e.preventDefault(); downloads.push({ name: a.download, href: a.href }); }
+  }, true);
+
+  // --- 1. cards -------------------------------------------------------------------------------
+  const boxes = CASES.map(c => {
+    const b = caseBox(c.name, c.narrow);
+    const card = Reports.card(c.spec, c.meta);
+    b.slot.appendChild(card);
+    b.card = card;
+    const r = Reports._read(c.spec, c.meta && c.meta.asked);
+    if (c.bad) {
+      b.add(r === null, 'it cannot be read');
+      b.add(card.classList.contains('ar-bad'), 'the card says so');
+      b.add((card.querySelector('.ar-note') || {}).textContent === 'This report could not be read, so there is no PDF. Asking again usually fixes it.', 'with the right words');
+      b.add(!card.querySelector('button'), 'and has no buttons');
+      return b;
+    }
+    b.add(r !== null, 'it can be read');
+    const title = card.querySelector('.ar-title').textContent;
+    b.add(title === (c.title || r.title), `card title "${title.slice(0, 60)}"`);
+    if (c.title) b.add(r.title === c.title, 'the title falls back to ' + c.title);
+    const kids = [...card.children].filter(n => !n.hidden).map(n => n.className);
+    b.add(same(kids, ['ar-thumb', 'ar-title', 'ar-btns']), 'the card is the page, the title and the buttons: ' + kids.join(', '));
+    const pg = card.querySelector('.ar-thumb .ar-pg');
+    b.add(pg && card.querySelector('.ar-thumb').getAttribute('aria-hidden') === 'true', 'the miniature is decoration (aria-hidden)');
+    b.add(pg && pg.querySelector('.ar-pg-t').textContent === r.title, 'the miniature has the title');
+    const tb = card.querySelector('.ar-thumb').getBoundingClientRect();
+    b.add(tb.width > 50 && tb.width < 90 && tb.height > 70 && tb.height < 112, `the miniature is small (${Math.round(tb.width)} x ${Math.round(tb.height)})`);
+    if (c.thumb) {
+      const nsvg = pg.querySelectorAll('svg').length;
+      if (c.thumb.charts !== undefined) b.add(c.thumb.charts ? nsvg >= 1 : nsvg === 0, `its charts are drawn (${nsvg})`);
+      if (c.thumb.tiles !== undefined) b.add(pg.querySelectorAll('.ar-pg-tiles > div').length === c.thumb.tiles, `its key numbers (${pg.querySelectorAll('.ar-pg-tiles > div').length})`);
+      if (c.thumb.short !== undefined) b.add(!!pg.querySelector('.ar-pg-short') === c.thumb.short, 'its summary when there is one');
+      const rects = [...pg.querySelectorAll('svg rect')].filter(x => +x.getAttribute('height') > 0 && x.getAttribute('fill') !== '#e3e7ea');
+      if (c.thumb.charts) b.add(rects.length > 0 || pg.querySelector('svg polyline'), `the chart has marks (${rects.length} bars)`);
+    }
+    const btns = [...card.querySelectorAll('.ar-btns button')].map(x => x.textContent);
+    b.add(same(btns, ['Download PDF', 'Open']), 'buttons: ' + btns.join(', '));
+    b.add(card.scrollWidth <= card.clientWidth + 1, `nothing sticks out of the card (${card.scrollWidth} in ${card.clientWidth})`);
+    if (c.read) c.read(r).forEach(([msg, pass, detail]) => b.add(pass, msg + (detail ? ' (' + detail + ')' : '')));
+    if (c.markup) {
+      b.add(!card.querySelector('img, script, .ar-pg-body b'), 'no markup became elements');
+      b.add(!/[<>]/.test(title) && !/</.test(card.querySelector('.ar-pg').textContent.replace(/3 < 5/g, '')), 'tags are dropped, not shown');
+    }
+    return b;
+  });
+
+  // --- 2. the library cannot load: the card says so, and a later click still works -------------
+  const fullBox = boxes[0], fullCard = fullBox.card;
+  const dl = fullCard.querySelector('.ar-btns .chiron-link:not(.load)'), open = fullCard.querySelector('.ar-btns .chiron-link.load');
+  const err = fullCard.querySelector('.ar-err');
+  const idle = async () => { for (let i = 0; i < 600 && fullCard.classList.contains('ar-busy'); i++) await sleep(50); };
+  const head = document.head, realAppend = head.appendChild;
+  head.appendChild = function (node) {
+    if (node && node.tagName === 'SCRIPT' && /pdfmake/.test(node.src)) { setTimeout(() => node.onerror && node.onerror(new Event('error')), 20); return node; }
+    return realAppend.call(this, node);
+  };
+  dl.click();
+  fullBox.add(dl.disabled && open.disabled && fullCard.classList.contains('ar-busy'), 'busy while the PDF is made');
+  await idle();
+  head.appendChild = realAppend;
+  fullBox.add(!err.hidden && /library did not load/.test(err.textContent), 'no library: "' + err.textContent + '"');
+  fullBox.add(downloads.length === 0, 'and nothing was downloaded');
+  fullBox.add(!dl.disabled, 'the button works again');
+
+  // --- 3. every PDF, read back ----------------------------------------------------------------
+  const pdfs = {};
+  window.reportPdfs = pdfs;
+  for (let i = 0; i < CASES.length; i++) {
+    const c = CASES[i], b = boxes[i];
+    if (c.bad) continue;
+    let p = null;
+    try {
+      if (c.noDataset) window.DATASET = '';
+      const t0 = performance.now();
+      const blob = await Reports._pdf(Reports._read(c.spec, c.meta && c.meta.asked), c.meta);
+      window.DATASET = 'synthea-10k';
+      pdfs[c.name] = blob;
+      b.add(blob && blob.type === 'application/pdf', `a PDF (${Math.round(blob.size / 1024)} KB, ${Math.round(performance.now() - t0)} ms)`);
+      p = await readPdf(blob, b.pages, c.all ? 99 : 3);
+    } catch (e) {
+      window.DATASET = 'synthea-10k';
+      b.add(false, 'the PDF could not be made or read: ' + (e && (e.stack || e.message) || e));
+      continue;
+    }
+    b.add(p.head === '%PDF-', 'starts as a PDF');
+    b.add(p.n >= c.pages[0] && p.n <= c.pages[1], `${p.n} pages (${c.pages[0]} to ${c.pages[1]})`);
+    if (c.images !== undefined) b.add(p.images === c.images, `${p.images} chart images (${c.images})`);
+    const text = p.all;
+    (c.has || []).forEach(s => b.add(text.includes(flat(s)) || squash(text).includes(squash(s)), 'has "' + s.slice(0, 70) + '"'));
+    (c.not || []).forEach(s => b.add(!text.includes(s), 'has no "' + s + '"'));
+    ['Made with Ask in Chiron', 'ASK IN CHIRON', 'Requested in Ask', '\ufffd'].forEach(s => b.add(!text.includes(s), 'no "' + s + '"'));
+    if (c.tiles) {
+      // every piece of text in the row of tiles lies inside one tile, never across an edge
+      const pg = p.pages[0], tileW = (pg.w - 88 - 24) / 4;
+      const first = rr0(c.spec, c.meta && c.meta.asked).numbers[0].value, top = pg.items.find(x => x.s.trim() === first);
+      const row = top ? pg.items.filter(x => x.y <= top.y + 5 && x.y >= top.y - 50) : [];
+      const bad = row.filter(x => ![0, 1, 2, 3].some(k => x.x >= 44 + k * (tileW + 8) - 1 && x.x + x.w <= 44 + k * (tileW + 8) + tileW + 1));
+      b.add(top && row.length >= 8 && bad.length === 0, `each key number fits its tile (${row.length} pieces)` + (bad.length ? ': ' + bad.map(x => `"${x.s}" ${Math.round(x.x)} to ${Math.round(x.x + x.w)}`).join('; ') : ''));
+    }
+    if (c.order) { const at = s => text.indexOf(flat(s)); b.add(c.order.every((s, k) => at(s) >= 0 && (k === 0 || at(c.order[k - 1]) < at(s))), 'in order: ' + c.order.join(' before ')); }
+    const pageOf = s => p.pages.findIndex(pg => pg.text.includes(flat(s)) || squash(pg.text).includes(squash(s)));
+    const pageFrom = (s, k) => { for (let j = Math.max(0, k); j < p.pages.length; j++) if (p.pages[j].text.includes(flat(s)) || squash(p.pages[j].text).includes(squash(s))) return j; return -1; };
+    const rr = Reports._read(c.spec, c.meta && c.meta.asked);
+    let lay = 0, layWhy = [];
+    rr.sections.forEach((sec, k) => {
+      const hp = pageFrom(`${k + 1} ${sec.heading}`, 0);
+      const para = sec.text.split(/\n\s*\n/)[0].replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+      const firstThing = para || (sec.chart && sec.chart.title) || (sec.table && sec.table.rows[0] && String(sec.table.rows[0][0])) || (sec.callout && sec.callout.text.replace(/\*\*/g, ''));
+      if (firstThing && hp >= 0 && !/[<>]/.test(firstThing) && pageFrom(firstThing, hp) !== hp) { lay++; layWhy.push(`"${sec.heading}" p${hp + 1}, "${firstThing.slice(0, 20)}" p${pageFrom(firstThing, hp) + 1}`); }
+      // a short intro stays with its chart, short table or callout
+      const intro = sec.text.replace(/\s+/g, ' ').trim();
+      const block = (sec.chart && sec.chart.title) || (sec.table && sec.table.rows.length <= 15 && String(sec.table.rows[0][0])) || (sec.callout && sec.callout.text.replace(/\*\*/g, ''));
+      if (intro && intro.length <= 600 && block && hp >= 0 && !/[<>]/.test(block) && pageFrom(block, hp) !== hp) { lay++; layWhy.push(`"${sec.heading}" p${hp + 1} is apart from its ${sec.chart ? 'chart' : sec.table ? 'table' : 'callout'} p${pageFrom(block, hp) + 1}`); }
+      if (sec.table && sec.table.rows.length <= 15 && hp >= 0) {
+        const a = String(sec.table.rows[0][0]), z = String(sec.table.rows[sec.table.rows.length - 1][0]);
+        if (a && z && pageFrom(a, hp) !== pageFrom(z, hp)) { lay++; layWhy.push(`table of "${sec.heading}" splits (p${pageFrom(a, hp) + 1}, p${pageFrom(z, hp) + 1})`); }
+      }
+      if (sec.chart && sec.chart.title && hp >= 0) {
+        const cp = pageFrom(sec.chart.title, hp);
+        if (cp >= 0 && p.pages[cp].images < 1) { lay++; layWhy.push(`caption of "${sec.heading}" on p${cp + 1} has no chart there`); }
+      }
+    });
+    if (rr.sections.length) b.add(lay === 0, 'every heading sits with what comes under it; short tables and captions stay whole' + (layWhy.length ? ': ' + layWhy.join('; ') : ''));
+    (c.together || []).forEach(([a, z]) => b.add(pageOf(a) >= 0 && pageOf(a) === pageOf(z), `"${a}" is on the page of its chart (${pageOf(a) + 1}, ${pageOf(z) + 1})`));
+    // the page furniture: nothing at the top; at the foot the dataset at the left, the page at the right
+    let top = 0, footOk = true, footWhy = '';
+    p.pages.forEach((pg, k) => {
+      top += pg.items.filter(it => it.y > pg.h - 46).length;
+      // pdf.js gives the foot word by word: words closer than 20 pt make one piece of text
+      const foot = pg.items.filter(it => it.y < 40).sort((a, b) => a.x - b.x);
+      const groups = [];
+      foot.forEach(it => {
+        const g = groups[groups.length - 1];
+        if (g && it.x - g.end < 20) { g.s += ' ' + it.s; g.end = it.x + it.w; } else groups.push({ s: it.s, x: it.x, end: it.x + it.w });
+      });
+      const want = (c.noDataset ? [] : [['Synthea 10k', 'left']]).concat([[`Page ${k + 1} of ${p.n}`, 'right']]);
+      const okHere = groups.length === want.length && want.every(([s, side], j) => flat(groups[j].s) === s
+        && (side === 'left' ? Math.abs(groups[j].x - 44) < 2 : Math.abs(groups[j].end - (pg.w - 44)) < 2));
+      if (!okHere && footOk) { footOk = false; footWhy = `page ${k + 1}: ` + groups.map(g => `"${g.s}" ${Math.round(g.x)} to ${Math.round(g.end)}`).join('; '); }
+    });
+    b.add(top === 0, 'nothing at the top of any page' + (top ? ` (${top} items)` : ''));
+    b.add(footOk, (c.noDataset ? 'the foot holds only the page number, at the right' : 'the foot holds the dataset at the left and "Page x of y" at the right, on every page') + (footWhy ? ': ' + footWhy : ''));
+    const title = (c.title || Reports._read(c.spec, c.meta && c.meta.asked).title);
+    b.add(p.info.Title === title, 'document title "' + String(p.info.Title).slice(0, 50) + '"');
+    if (c.markup) b.add(window.pwned === undefined, 'no markup ran');
+  }
+
+  // --- 4. the buttons ---------------------------------------------------------------------------
+  const btnBox = caseBox('buttons');
+  btnBox.slot.appendChild(el('div', null, 'Download PDF, Open, and Open when the browser blocks the new tab, on the full report.'));
+  let t0 = performance.now();
+  dl.click();
+  await idle();
+  const first = performance.now() - t0;
+  btnBox.add(downloads.length === 1 && downloads[0].name === 'Type 2 diabetes in Synthea 10k.pdf', 'Download PDF saves "' + (downloads[0] && downloads[0].name) + '"');
+  btnBox.add(downloads[0] && downloads[0].href.startsWith('blob:'), 'from a blob');
+  btnBox.add(err.hidden, 'the earlier error is cleared');
+  t0 = performance.now();
+  dl.click();
+  await idle();
+  const second = performance.now() - t0;
+  btnBox.add(downloads.length === 2 && second < Math.max(60, first / 4), `the second download reuses the PDF (${Math.round(first)} ms, then ${Math.round(second)} ms)`);
+  const realOpen = window.open;
+  const fake = { closed: false, opener: window, document: document.implementation.createHTMLDocument('x'), location: { href: '' }, close() { this.closed = true; } };
+  window.open = () => fake;
+  open.click();
+  btnBox.add(fake.document.title === 'Making the PDF…' && fake.document.body.textContent === 'Making the PDF…', 'Open: the new tab says "Making the PDF…" at once');
+  btnBox.add(fake.opener === null, 'Open: the new tab cannot reach back into the page');
+  await idle();
+  btnBox.add(fake.location.href.startsWith('blob:'), 'Open: the tab shows the PDF (' + fake.location.href.slice(0, 30) + ')');
+  btnBox.add(downloads.length === 2, 'Open does not also download');
+  window.open = () => null;
+  open.click();
+  await idle();
+  btnBox.add(downloads.length === 3 && downloads[2].name === 'Type 2 diabetes in Synthea 10k.pdf', 'Open with the new tab blocked: the PDF is downloaded instead');
+  window.open = realOpen;
+  const longBox = boxes[CASES.findIndex(c => c.name === 'a very long title')];
+  longBox.card.querySelector('.ar-btns .chiron-link:not(.load)').click();
+  for (let i = 0; i < 600 && longBox.card.classList.contains('ar-busy'); i++) await sleep(50);
+  const longName = downloads[3] && downloads[3].name;
+  const longTitle = 'A very long report title that goes on and on '.repeat(6).trim(), stem = longName ? longName.replace(/\.pdf$/, '') : '';
+  btnBox.add(longName && longName.endsWith('.pdf') && longName.length <= 124 && longTitle.startsWith(stem) && longTitle[stem.length] === ' ', 'a long title is cut at a word: "' + longName + '"');
+  const symBox = boxes[CASES.findIndex(c => c.name === 'symbols the font lacks')];
+  symBox.card.querySelector('.ar-btns .chiron-link:not(.load)').click();
+  for (let i = 0; i < 600 && symBox.card.classList.contains('ar-busy'); i++) await sleep(50);
+  btnBox.add(downloads[4] && downloads[4].name === 'Symbols.pdf', 'emoji in a title are left out of its file name: "' + (downloads[4] && downloads[4].name) + '"');
+  // file names: the title, as a person would save it
+  [['Type 2 diabetes patients on metformin, Synthea 300', 'Type 2 diabetes patients on metformin, Synthea 300.pdf'],
+   ['Asthma: by age/gender, 2010\u20132020?', 'Asthma - by age-gender, 2010\u20132020.pdf'],
+   ['Caf\u00e9 r\u00e9sum\u00e9 \u00b7 S\u00e3o Paulo', 'Caf\u00e9 r\u00e9sum\u00e9 \u00b7 S\u00e3o Paulo.pdf'],
+   ['.hidden', 'hidden.pdf'], ['Trailing dots...', 'Trailing dots.pdf'], ['CON', 'CON report.pdf'], ['nul.txt', 'nul.txt report.pdf'],
+   ['???', 'Report.pdf'], ['a\tb\nc', 'a b c.pdf'], ['Back\\slash | pipe <x> "q" *', 'Back-slash pipe x q.pdf'],
+   ['Rates 2019 \u2192 2023 \ud83c\udf89', 'Rates 2019 to 2023.pdf'], ['W'.repeat(200), 'W'.repeat(120) + '.pdf']].forEach(([title, want]) => {
+    const got = Reports._name({ title });
+    btnBox.add(got === want, `"${title.slice(0, 40)}" is saved as "${got.slice(0, 60)}"` + (got === want ? '' : ` (wanted "${want.slice(0, 60)}")`));
+  });
+  btnBox.add(!document.querySelector('.ar-err:not([hidden])'), 'no card shows an error');
+
+  const fails = results.filter(r => !r.pass);
+  const sum = document.getElementById('summary');
+  sum.textContent = fails.length ? `${fails.length} of ${results.length} checks failed` : `All ${results.length} checks passed on ${CASES.length} reports`;
+  sum.className = fails.length ? 'fail' : 'pass';
+  window.reportChecks = { total: results.length, failed: fails, cases: CASES.length };
+})().catch(e => {
+  const sum = document.getElementById('summary');
+  sum.textContent = 'The checks stopped: ' + (e && (e.stack || e.message) || e);
+  sum.className = 'fail';
+  window.reportChecks = { total: 0, failed: [{ name: 'harness', msg: String(e && (e.stack || e.message) || e) }], cases: 0 };
+});
+</script>
+</body>
+</html>

@@ -324,6 +324,35 @@ def _norm_num(v: float) -> str:
 _CHART = re.compile(r"```chart\s*([\s\S]*?)```")
 
 
+def _chart_issues(spec) -> list[str]:
+    """What is wrong with one chart block, as the page would draw it."""
+    issues: list[str] = []
+    if not isinstance(spec, dict):
+        return ["The chart is not a JSON object."]
+    if spec.get("type", "bar") not in ("bar", "line", "doughnut"):
+        issues.append(f"Unknown chart type {spec.get('type')!r}; Chart.js may refuse it.")
+    if isinstance(spec.get("series"), list) and isinstance(spec.get("x"), list):
+        for sr in spec["series"]:
+            ys = (sr or {}).get("y") or []
+            if len(ys) != len(spec["x"]):
+                issues.append(f"Series {sr.get('label')!r} has {len(ys)} values for {len(spec['x'])} bars.")
+            if any(not isinstance(y, (int, float)) for y in ys):
+                issues.append(f"Series {sr.get('label')!r} has values that are not numbers.")
+        bars = len(spec["x"])
+    else:
+        data = spec.get("data") or []
+        if not data:
+            issues.append("The chart has no data.")
+        if any(not isinstance((d or {}).get("y"), (int, float)) for d in data if isinstance(d, dict)):
+            issues.append("Some bars have values that are not numbers.")
+        bars = len(data)
+    if bars == 1:
+        issues.append("A chart with a single bar: the prompt asks for no chart of one number.")
+    if not spec.get("title"):
+        issues.append("No title, so the reader cannot tell what the bars are.")
+    return issues
+
+
 def chart_audit(text: str) -> list[dict]:
     """Each ```chart block in an answer, as the page will read it, with any problems."""
     out = []
@@ -335,32 +364,77 @@ def chart_audit(text: str) -> list[dict]:
             item.update(ok=False, issues=[f"Not valid JSON ({exc}), so the page drops the chart."])
             out.append(item)
             continue
+        item.update(ok=True, spec=spec, issues=_chart_issues(spec))
+        out.append(item)
+    return out
+
+
+_REPORT = re.compile(r"```report\s*([\s\S]*?)```")
+
+
+def report_audit(text: str) -> list[dict]:
+    """Each ```report block in an answer (a PDF report, see the answering rules), as the page
+    will read it, with any problems."""
+    out = []
+    for body in _REPORT.findall(text or ""):
+        item: dict = {"source": body.strip()[:12000], "issues": []}
+        try:
+            spec, loose = json.loads(body), False
+        except ValueError as exc:
+            # As on the page: a line break inside a string (JSON does not allow one) is
+            # read as a space; whitespace between values was free anyway.
+            try:
+                spec, loose = json.loads(re.sub(r"\s*\n\s*", " ", body)), True
+            except ValueError:
+                item.update(ok=False, issues=[f"Not valid JSON ({exc}), so the page cannot make the PDF."])
+                out.append(item)
+                continue
         item.update(ok=True, spec=spec)
+        issues = item["issues"]
+        if loose:
+            issues.append("A string breaks across lines, which JSON does not allow; the page reads the break as a space.")
         if not isinstance(spec, dict):
-            item["issues"].append("The chart is not a JSON object.")
-        else:
-            if spec.get("type", "bar") not in ("bar", "line", "doughnut"):
-                item["issues"].append(f"Unknown chart type {spec.get('type')!r}; Chart.js may refuse it.")
-            if isinstance(spec.get("series"), list) and isinstance(spec.get("x"), list):
-                for s in spec["series"]:
-                    ys = (s or {}).get("y") or []
-                    if len(ys) != len(spec["x"]):
-                        item["issues"].append(
-                            f"Series {s.get('label')!r} has {len(ys)} values for {len(spec['x'])} bars.")
-                    if any(not isinstance(y, (int, float)) for y in ys):
-                        item["issues"].append(f"Series {s.get('label')!r} has values that are not numbers.")
-                bars = len(spec["x"])
-            else:
-                data = spec.get("data") or []
-                if not data:
-                    item["issues"].append("The chart has no data.")
-                if any(not isinstance((d or {}).get("y"), (int, float)) for d in data if isinstance(d, dict)):
-                    item["issues"].append("Some bars have values that are not numbers.")
-                bars = len(data)
-            if bars == 1:
-                item["issues"].append("A chart with a single bar: the prompt asks for no chart of one number.")
-            if not spec.get("title"):
-                item["issues"].append("No title, so the reader cannot tell what the bars are.")
+            item["ok"] = False
+            issues.append("The report is not a JSON object, so the page cannot make the PDF.")
+            out.append(item)
+            continue
+        if not str(spec.get("title") or "").strip():
+            issues.append("No title.")
+        secs, nums = spec.get("sections"), spec.get("numbers")
+        if not (isinstance(secs, list) and secs) and not str(spec.get("summary") or "").strip() and not nums:
+            item["ok"] = False
+            issues.append("No sections, summary or numbers, so there is nothing to put in the PDF.")
+        if isinstance(nums, list) and len(nums) > 4:
+            issues.append(f"{len(nums)} key numbers; the PDF shows the first 4.")
+        if isinstance(secs, list):
+            if len(secs) > 8:
+                issues.append(f"{len(secs)} sections; the rules ask for at most 8.")
+            for i, sec in enumerate(secs, 1):
+                if not isinstance(sec, dict):
+                    issues.append(f"Section {i} is not a JSON object, so it is left out.")
+                    continue
+                if not str(sec.get("heading") or "").strip():
+                    issues.append(f"Section {i} has no heading.")
+                for key in ("about", "summary", "numbers"):
+                    if sec.get(key):
+                        issues.append(f'Section {i} has "{key}", which belongs at the top level; '
+                                      + ('the page moves it to the end of the report.' if key == "about"
+                                         else 'the page leaves it out.'))
+                if sec.get("chart") is not None:
+                    issues.extend(f"Section {i} chart: {x}" for x in _chart_issues(sec.get("chart")))
+                tb = sec.get("table")
+                if isinstance(tb, dict):
+                    cols, rows = tb.get("columns"), tb.get("rows")
+                    if not isinstance(cols, list) or not isinstance(rows, list):
+                        issues.append(f"Section {i} table needs columns and rows.")
+                    elif any(not isinstance(r, list) or len(r) != len(cols) for r in rows):
+                        issues.append(f"Section {i} table has rows that do not match its {len(cols)} columns.")
+                    elif not rows:
+                        issues.append(f"Section {i} table has no rows, so it is left out.")
+                    elif len(rows) > 1000:
+                        issues.append(f"Section {i} table has {len(rows):,} rows; the PDF shows the first 1,000.")
+                elif tb is True and sec.get("chart") is None:
+                    issues.append(f"Section {i} asks for its chart's table but has no chart.")
         out.append(item)
     return out
 
@@ -850,6 +924,8 @@ class Trace:
                     bits.append(f"{shown} follow-up suggestion{'s' if shown != 1 else ''}")
                 if p.get("charts"):
                     bits.append(f"{len(p['charts'])} chart{'s' if len(p['charts']) > 1 else ''}")
+                if p.get("reports"):
+                    bits.append(f"{len(p['reports'])} PDF report{'s' if len(p['reports']) > 1 else ''}")
                 self._end(self._post, "ok", summary=", ".join(bits) or "Nothing to add")
         self._guard(go)
 
@@ -1582,6 +1658,9 @@ def _checks(tr: Trace) -> list[dict]:
     for ch in post.get("charts") or []:
         for issue in ch.get("issues") or []:
             out.append(_check("warn" if not ch.get("ok") else "info", "Chart: " + issue))
+    for rp in post.get("reports") or []:
+        for issue in rp.get("issues") or []:
+            out.append(_check("warn" if not rp.get("ok") else "info", "Report: " + issue))
     dropped = [f for f in post.get("followups") or [] if not f.get("shown")]
     if dropped:
         out.append(_check("info", f"{len(dropped)} suggested follow-up{'s' if len(dropped) > 1 else ''} not shown",

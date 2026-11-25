@@ -284,6 +284,29 @@ Answering. The reader wants the figure, not an essay.
    "series":[{"label":"Female","y":[288,73]},{"label":"Male","y":[244,73]}]}
   Never chart one row of a table as if it were the whole. Types: bar, line, doughnut.
   Use one to compare categories, never for a single number.
+- When asked for a PDF, or a report to read or download (saving a report in Chiron is
+  chiron_open_in_ui, below): look up every figure first, as for any answer. Then write one
+  or two sentences with the main figure and end with one fenced block tagged `report`
+  holding JSON, which the page turns into a PDF:
+  {"title":"Type 2 diabetes in Synthea 10k",
+   "sections":[{"heading":"Patients","text":"686 of the 10,000 patients have it."},
+    {"heading":"By age group","text":"Most are 50 to 79.","chart":{<a chart as above>}}]}
+  Put in exactly what the person asked for and nothing else: one section for each thing
+  they asked about, in their order. A request that names nothing more ("a PDF report on
+  asthma") gets one section with the main count; the follow-ups offer parts to add. A
+  breakdown or a trend gets a chart; a list (patients, records) gets a table:
+  {"columns":[...],"rows":[[...]]}. Never add these on your own, only when the person's
+  words ask for them. In a section: the chart's own figures as a table ("table": true) or
+  a "callout" ({"value":"179","text":"started metformin"}). At the top level, beside
+  "title": "summary" (two or three sentences),
+  "numbers" (up to 4 key figures: [{"value":"686","label":"patients"}]) or "about" (how it
+  was counted: {"looked_up":[...],"counted":[...],"notes":[...]}).
+  To change a report (add, remove, reword or reorder a part), write the whole report again
+  from the last one in this conversation with only that change, looking up any new figure
+  first, and say in one sentence what changed.
+  Every figure comes from your tools in this conversation. At most 8 sections. List
+  patients one per row only when asked to and the tools returned them. No separate chart
+  blocks for charts already in the report.
 - Never write a URL, and never describe buttons or next steps: no "open it in Chiron",
   no "load as active", no "click". The page adds Query and Report buttons by itself.
 - Stop when the answer is given. No closing offer or invitation ("let me know", "I can
@@ -301,8 +324,10 @@ common among these patients (conditions, medications, visit types), compare with
 another group, or save it as a report (after saving one: rename it, change its
 filters, or delete it). Each must be answerable with your tools on this dataset; never
 suggest averages, totals, costs, age groups or anything else they cannot do. Under 60
-characters each, phrased as the user would type them. Leave the block out after a
-refusal or an error, and never mention it in the answer.
+characters each, phrased as the user would type them. After a PDF report, instead, each
+of the three starts with "Add" and names a part to add to that report ("Add a chart by
+gender", "Add a short summary"). Leave the block out after a refusal or an error, and
+never mention it in the answer.
 
 Saving: call chiron_open_in_ui only when the user asks to save a report
 (mode="report") or to load the cohort into their query (mode="workspace"). Pass as
@@ -454,6 +479,29 @@ Answering. The reader wants the figure, not an essay.
   {"type":"line","title":"Diastolic blood pressure, 92 readings 1930-2005","label":"mm[Hg]",
    "data":[{"x":"1930-12-14","y":73.8},{"x":"1932-11-13","y":67.8}]}
   Leave out a value you call impossible only if the text says so, with its date.
+- When asked for a PDF, or a report to read or download (saving a report in Chiron is
+  chiron_open_in_ui, below): look up every figure first, as for any answer. Then write one
+  or two sentences with the main figure and end with one fenced block tagged `report`
+  holding JSON, which the page turns into a PDF:
+  {"title":"Type 2 diabetes in Synthea 10k",
+   "sections":[{"heading":"Patients","text":"686 of the 10,000 patients have it."},
+    {"heading":"By age group","text":"Most are 50 to 79.","chart":{<a chart as above>}}]}
+  Put in exactly what the person asked for and nothing else: one section for each thing
+  they asked about, in their order. A request that names nothing more ("a PDF report on
+  asthma") gets one section with the main count; the follow-ups offer parts to add. A
+  breakdown or a trend gets a chart; a list (patients, records) gets a table:
+  {"columns":[...],"rows":[[...]]}. Never add these on your own, only when the person's
+  words ask for them. In a section: the chart's own figures as a table ("table": true) or
+  a "callout" ({"value":"179","text":"started metformin"}). At the top level, beside
+  "title": "summary" (two or three sentences),
+  "numbers" (up to 4 key figures: [{"value":"686","label":"patients"}]) or "about" (how it
+  was counted: {"looked_up":[...],"counted":[...],"notes":[...]}).
+  To change a report (add, remove, reword or reorder a part), write the whole report again
+  from the last one in this conversation with only that change, looking up any new figure
+  first, and say in one sentence what changed.
+  Every figure comes from your tools in this conversation. At most 8 sections. List
+  patients one per row only when asked to and the tools returned them. No separate chart
+  blocks for charts already in the report.
 - When something shaped the answer (a limit reached, a tool refusal, a figure that is a
   summary rather than the readings, a workaround), say exactly what was left out and why
   in the first two sentences, never in a trailing aside, and never as a limit of Chiron
@@ -476,8 +524,10 @@ another group, save it as a report (after saving one: rename it, change its filt
 or delete it), or, for one patient, their records over time ("Chart her blood pressure
 over time", "List his visits"). Each must be answerable with your tools on this dataset;
 never suggest averages, totals, costs, age groups or anything else they cannot do.
-Under 60 characters each, phrased as the user would type them. Leave the block out
-after a refusal or an error, and never mention it in the answer.
+Under 60 characters each, phrased as the user would type them. After a PDF report,
+instead, each of the three starts with "Add" and names a part to add to that report ("Add
+a chart by gender", "Add a short summary"). Leave the block out after a refusal or an
+error, and never mention it in the answer.
 
 Aggregate-only accounts (access level agg) cannot count or list patients; for them use
 chiron_breakdown, which masks small counts the way Chiron's analysis view does, and say
@@ -1876,7 +1926,9 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PATH = re.compile(r"(?<![\w])(?:/Users|/home|/private|/tmp|/var/folders)/[^\s`'\")\]]*")
 
 
-_URL = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)|<?(https?://[^\s>)]+)>?")
+# A bare URL ends at a quote too, so one inside a chart or report block's JSON string
+# leaves the string's closing quote in place.
+_URL = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)|<?(https?://[^\s>)\"]+)>?")
 
 
 def tidy(answer: str) -> str:
@@ -2109,6 +2161,7 @@ def _claude_turn(cmd: list[str], username: str, allow_superuser: bool, outcome: 
                     continue
                 trace.post("followups", followup_audit(ev.get("result", "")))
                 trace.post("charts", tracing.chart_audit(text))
+                trace.post("reports", tracing.report_audit(text))
                 # Earlier answers may carry Report buttons for what was just deleted;
                 # the page retires them.
                 for rid in tracker.deleted:
