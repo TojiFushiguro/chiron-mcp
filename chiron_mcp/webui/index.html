@@ -3005,7 +3005,8 @@ const Reports = (() => {
     return cut || t;
   }
   // a title, heading, label or table cell is plain text: markdown marks in it are dropped
-  const bare = v => str(v).replace(/^#+\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]*)`/g, '$1').trim();
+  const inline = v => str(v).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]*)`/g, '$1').trim();
+  const bare = v => inline(str(v).replace(/^#{1,6}\s+(?=\S)/, ''));   // and a heading's "## " mark
   const val = v => (typeof v === 'number' ? Charts._number(v) : bare(v));
   const list = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v]);
   function dateOf(at) {
@@ -3035,8 +3036,9 @@ const Reports = (() => {
         const [columns, ...rows] = Charts._rows(chart, false);
         table = { columns: columns.map(String), rows };
       } else if (x.table && typeof x.table === 'object' && Array.isArray(x.table.columns) && Array.isArray(x.table.rows)) {
-        const columns = x.table.columns.map(c => bare(c) || ' ');
-        table = { columns, rows: x.table.rows.filter(Array.isArray).map(r => columns.map((_, j) => (typeof r[j] === 'number' ? r[j] : bare(r[j])))) };
+        // a table's words as written: "#" or "# of visits" is a column name, not a heading
+        const columns = x.table.columns.map(c => inline(c) || ' ');
+        table = { columns, rows: x.table.rows.filter(Array.isArray).map(r => columns.map((_, j) => (typeof r[j] === 'number' ? r[j] : inline(r[j])))) };
       }
       if (table && (!table.columns.length || !table.rows.length)) table = null;
       if (table && table.rows.length > MAX_ROWS) { table.more = table.rows.length - MAX_ROWS; table.rows = table.rows.slice(0, MAX_ROWS); }
@@ -3116,20 +3118,63 @@ const Reports = (() => {
              layout: { hLineWidth: () => 0.75, vLineWidth: () => 0.75, hLineColor: () => LINE, vLineColor: () => LINE,
                        paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 } };
   }
-  // A first column of long names (conditions, medications) takes the spare width and the
-  // numbers sit at the right; otherwise (dates, short codes) the columns share it evenly.
-  function widthsOf(tb) {
-    const n = tb.columns.length;
-    const longest = Math.max(String(tb.columns[0]).length, ...tb.rows.slice(0, 200).map(r => cell(r[0]).length));
-    return n <= 4 && longest > 24 ? tb.columns.map((_, j) => (j === 0 ? '*' : 'auto')) : tb.columns.map(() => '*');
+  // Widths that keep a table on the page. pdfmake never makes a column narrower than its
+  // longest unbreakable word, and gives every '*' column the width of the widest of those, so
+  // even shares ran off the page as soon as one column held a long id (a patient id breaks only
+  // at a hyphen before a letter). So: a first column of long names (conditions, medications)
+  // takes the spare width with the numbers at the right; else the columns share it evenly when
+  // the widest word fits a share; else each column is as wide as its words ('auto') and the
+  // column of names or descriptions takes what is left. When even the columns' longest words
+  // do not fit the page (several columns of ids), each column gets a fixed share of it, as
+  // much as its text asks for, and words too long for their column are split over lines.
+  const TEXT_W = 612 - 44 * 2, EM = 0.6;   // a Letter page's text width; a Roboto character, generously, in ems
+  function layoutOf(tb, fs) {
+    const n = tb.columns.length, rows = tb.rows.slice(0, 200), per = EM * fs, pad = 12;
+    const texts = tb.columns.map((c, j) => [String(c), ...rows.map(r => cell(r[j]))]);
+    const word = j => Math.max(1, ...texts[j].flatMap(s => s.split(/\s+/)).map(w => w.length));
+    const len = j => Math.max(1, ...texts[j].map(s => s.length));
+    const mins = tb.columns.map((_, j) => word(j) * per + pad), whole = tb.columns.map(() => Infinity);
+    if (mins.reduce((a, b) => a + b, 0) > TEXT_W) {
+      const want = tb.columns.map((_, j) => Math.min(len(j), 40) * per + pad), least = 6 * per + pad;
+      let w = want.map(x => x * TEXT_W / want.reduce((a, b) => a + b, 0));
+      const low = want.map(() => false);   // a column below the least width gets it, for good; the rest share what is left
+      for (let k = 0; k < n; k++) {
+        w.forEach((x, j) => { if (x < least) low[j] = true; });
+        const fixed = low.filter(Boolean).length * least, rest = want.reduce((a, x, j) => a + (low[j] ? 0 : x), 0);
+        w = want.map((x, j) => (low[j] || !rest ? least : x * (TEXT_W - fixed) / rest));
+      }
+      return { widths: w.map(x => Math.floor((x - pad) * 10) / 10), limit: w.map(x => Math.max(6, Math.floor((x - pad) / per))) };
+    }
+    if (n <= 4 && len(0) > 24 && mins[0] <= TEXT_W / 2) return { widths: tb.columns.map((_, j) => (j === 0 ? '*' : 'auto')), limit: whole };
+    if (Math.max(...mins) * n <= TEXT_W) return { widths: tb.columns.map(() => '*'), limit: whole };
+    const prose = j => !numeric(tb.rows, j) && texts[j].slice(1).some(s => /\S\s+\S/.test(s));
+    const pick = f => tb.columns.map((_, j) => j).filter(f).sort((a, b) => len(b) - len(a))[0];
+    const star = pick(prose) ?? pick(j => !numeric(tb.rows, j)) ?? 0;
+    return { widths: tb.columns.map((_, j) => (j === star ? '*' : 'auto')), limit: whole };
+  }
+  // A word longer than max characters, split over lines: after a hyphen when one is near.
+  function breakLong(s, max) {
+    if (!isFinite(max)) return s;
+    return String(s).split(/(\s+)/).map(w => {
+      if (/^\s*$/.test(w) || w.length <= max) return w;
+      const out = [];
+      let rest = w;
+      while (rest.length > max) {
+        let cut = rest.lastIndexOf('-', max - 1) + 1;
+        if (cut < Math.ceil(max / 2)) cut = max;
+        out.push(rest.slice(0, cut)); rest = rest.slice(cut);
+      }
+      return out.concat(rest).join('\n');
+    }).join('');
   }
   function tableBlock(tb) {
     const n = tb.columns.length, fs = n > 8 ? 7 : n > 5 ? 8 : 9;
     const right = tb.columns.map((_, j) => j > 0 && numeric(tb.rows, j));
-    const head = tb.columns.map((c, j) => ({ text: c, bold: true, color: '#ffffff', fillColor: TEAL, alignment: right[j] ? 'right' : 'left' }));
-    const body = tb.rows.map(r => r.map((v, j) => ({ text: cell(v), alignment: right[j] ? 'right' : 'left' })));
+    const { widths, limit } = layoutOf(tb, fs);
+    const head = tb.columns.map((c, j) => ({ text: breakLong(c, limit[j]), bold: true, color: '#ffffff', fillColor: TEAL, alignment: right[j] ? 'right' : 'left' }));
+    const body = tb.rows.map(r => r.map((v, j) => ({ text: breakLong(cell(v), limit[j]), alignment: right[j] ? 'right' : 'left' })));
     return { fontSize: fs, color: INK2, margin: [0, 2, 0, 14],
-             table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: widthsOf(tb), body: [head, ...body] },
+             table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths, body: [head, ...body] },
              layout: { fillColor: row => (row > 0 && row % 2 === 0 ? PANEL : null), hLineWidth: (i, node) => (i === 0 || i === 1 ? 0 : i === node.table.body.length ? 0.75 : 0.5),
                        vLineWidth: () => 0, hLineColor: () => LINE2, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4 } };
   }

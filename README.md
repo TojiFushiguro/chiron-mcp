@@ -1235,7 +1235,9 @@ sends nothing anywhere, and says to press Open again for an address it no longer
 without service workers, Open falls back to a `blob:` address. A heading stays with what
 follows it, a chart's caption with its chart, and a
 table of fifteen rows or fewer is never split (a longer one repeats its header on each page,
-and one over 1,000 rows is cut there, saying so). Arrows, check marks and emoji, which the
+and one over 1,000 rows is cut there, saying so). A table always fits the page's width (a column
+holding long ids no longer widens every column), and an id too long for its column wraps at a
+hyphen. Arrows, check marks and emoji, which the
 PDF font lacks, become words or are left out. A block that is not valid JSON shows as a card
 that says the report could not be read, and the trace lists each report block with any
 problems (`report_audit` in trace.py). `tests/reports_check.html` reads about thirty-five
