@@ -21,7 +21,8 @@
 <div id="summary">Running&hellip;</div>
 <div class="grid" id="grid"></div>
 <script>
-// Ask's chart code against the edge cases a model's chart block can bring.
+// Ask's chart code against the edge cases a model's chart block can bring: drawing, colors,
+// the hover box, the table, the image, the CSV and the Excel file (read back and checked).
 // Serve the repository root (python3 -m http.server) and open /tests/charts_check.html.
 // The page reads chiron_mcp/webui/index.html, takes its styles and its chart code (from
 // "const ISO_DAY" to "// --- traces"), draws every case below and checks it; the bar
@@ -122,12 +123,76 @@
     { name: 'a 300-character title', spec: { type: 'bar', title: 'A '.repeat(150).trim(), label: 'Patients', data: [{ x: 'A', y: 1 }] }, want: { png: true } },
     { name: 'negative doughnut', spec: { type: 'doughnut', title: 'Not parts', label: 'Change', data: [{ x: 'A', y: 5 }, { x: 'B', y: -2 }] }, want: { parts: false } },
     { name: 'zero doughnut', spec: { type: 'doughnut', title: 'Zero total', label: 'Patients', data: [{ x: 'A', y: 0 }, { x: 'B', y: 0 }] }, want: { parts: false } },
+    { name: 'a few categories', spec: { type: 'bar', title: 'Encounters by type', label: 'Encounters', data: [{ x: 'Ambulatory', y: 61532 }, { x: 'Wellness', y: 48210 },
+      { x: 'Outpatient', y: 22104 }, { x: 'Emergency', y: 9876 }, { x: 'Inpatient', y: 3412 }] }, want: { colors: 'palette', n: 5 } },
+    { name: 'ordered groups', spec: { type: 'bar', title: 'Patients by age group', label: 'Patients', data: [['0-17', 2214], ['18-34', 2086], ['35-49', 1842], ['50-64', 1903], ['65-79', 1391], ['80+', 564]] },
+      want: { colors: 'ramp', n: 6 } },
+    { name: 'percentages', spec: { type: 'bar', title: 'Share with hypertension, by age group', label: 'Percent of patients', data: [['0-17', '3.1%'], ['18-34', '8.4%'], ['35-49', '21.7%'], ['50-64', '38.2%']] },
+      want: { xls: { fmt: '0.0#%', first: 0.031 } } },
+    { name: 'two readings', spec: { type: 'line', title: 'Blood pressure, one patient', label: 'mmHg', x: ['2023-01-05', '2023-06-10', '2024-02-20', '2024-09-01'],
+      series: [{ label: 'Systolic', y: [128, 135, 131, 126] }, { label: 'Diastolic', y: [82, 88, 84, 80] }] }, want: { band: true, legend: 2 } },
+    { name: 'names Excel refuses', spec: { type: 'bar', title: 'Patients [by] county: a/b? *x* \\ y and a very long title past thirty-one', label: 'Patients', data: [['A', 1], ['B', 2]] },
+      want: { xls: { sheet: true } } },
+    { name: 'a quote at the cut', spec: { type: 'bar', title: "Patients with each of Hamilton's top conditions", label: 'Patients', data: [['A', 1], ['B', 2]] }, want: { xls: { sheetName: 'Patients with each of Hamilton' } } },
+    { name: "a title of quotes", spec: { type: 'bar', title: "''' ''", label: 'Patients', data: [['A', 1], ['B', 2]] }, want: { xls: { sheetName: 'Chart' } } },
+    { name: 'a chart called History', spec: { type: 'bar', title: 'History', label: 'Patients', data: [['A', 1], ['B', 2]] }, want: { xls: { sheetName: 'Chart' } } },
+    { name: 'a chart called About', spec: { type: 'bar', title: 'About', label: 'Patients', data: [['A', 1], ['B', 2]] }, want: { xls: { sheetName: 'About', second: 'Notes' } } },
     { name: 'narrow: top 10', narrow: true, spec: { type: 'bar', title: 'Patients by condition (top 10)', label: 'Patients', data: conds.map((x, i) => ({ x, y: counts[i] })) },
       want: { horizontal: true, labelled: true } },
     { name: 'narrow: grouped', narrow: true, spec: { type: 'bar', title: 'Asthma patients by race and gender', label: 'Patients', x: ['White', 'Black', 'Asian', 'Native', 'Other'],
       series: [{ label: 'Female', y: [288, 73, 41, 6, 12] }, { label: 'Male', y: [244, 73, 38, 4, 9] }] }, want: { legend: 2 } },
   ];
 
+  const PALETTE = ['#00897b', '#7b1fa2', '#ef6c00', '#d81b60', '#ff8f00', '#e53935', '#1e88e5', '#388e3c'];
+  window.xlsxSamples = {};
+  // The Excel file of a chart, read back: sheets, header, rows, formats, bars, totals, heat.
+  async function checkXlsx(c, s, w, ok) {
+    let blob = null, err = null;
+    try { blob = await Charts._xlsx(s, { question: 'Q: ' + c.name }); } catch (e) { err = e; }
+    ok(blob && blob.size > 1000, 'Excel made' + (err ? ': ' + err.message : blob ? ` (${Math.round(blob.size / 1024)} KB)` : ''));
+    if (!blob) return;
+    if (['doughnut as parts', 'grouped bars', 'one patient, readings', 'counts per year', 'some suppressed', 'negative changes', 'percentages', 'ten series'].includes(c.name)) window.xlsxSamples[c.name] = blob;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await blob.arrayBuffer());
+    const ws = wb.worksheets[0], about = wb.worksheets[1];
+    ok(wb.worksheets.length === 2 && ws.name.length <= 31 && !/[\[\]:*?\/\\]/.test(ws.name) && ws.name.trim() === ws.name && ws.name, `sheet "${ws.name}" and "${about && about.name}"`);
+    if (w.sheetName) ok(ws.name === w.sheetName, 'sheet named ' + ws.name);
+    if (w.second) ok(about.name === w.second, 'second sheet named ' + about.name);
+    ok(ws.views && ws.views[0] && ws.views[0].state === 'frozen' && ws.views[0].ySplit === 4, 'the header stays put');
+    ok(ws.getCell('A1').value === (s.title || 'Chart') && /Made with Ask in Chiron/.test(ws.getCell('A2').value), 'title and source line');
+    const first = s.years ? 'Year' : s.dates ? 'Date' : 'Category';
+    ok(ws.getCell('A4').value === first && ws.getCell('A4').fill.fgColor.argb === 'FF00897B', 'header ' + ws.getCell('A4').value);
+    let rows = 0;
+    while (ws.getCell(5 + rows, 1).value !== null && ws.getCell(5 + rows, 1).value !== undefined) rows++;
+    const extra = s.parts || (s.multi && s.counts) ? 1 : 0;
+    ok(rows === s.n + extra, `rows ${rows} = ${s.n}${extra ? ' + total' : ''}`);
+    const b5 = ws.getCell('B5');
+    if (typeof b5.value === 'number') {
+      const want = w.fmt || (s.series[0].values.every(v => v == null || Number.isInteger(v)) ? '#,##0' : '#,##0.0###');
+      ok(b5.numFmt === want, 'number format ' + b5.numFmt);
+      if (w.first !== undefined) ok(Math.abs(b5.value - w.first) < 1e-9, 'value ' + b5.value);
+    }
+    if (s.dates) ok(ws.getCell('A5').value instanceof Date && /mmm/.test(ws.getCell('A5').numFmt), 'dates are real dates');
+    if (s.years) ok(typeof ws.getCell('A5').value === 'number' && ws.getCell('A5').numFmt === '0', 'years are numbers');
+    if (!s.multi && !s.negative) {
+      const col = 2 + (s.parts ? 1 : 0) + 1;
+      const okBars = s.series[0].values.every((v, j) => { const x = ws.getCell(5 + j, col).value; return v > 0 ? typeof x === 'string' && /^[█▏]+$/.test(x) : !x; });
+      ok(okBars, 'a bar for every number above zero');
+    }
+    if (s.negative && !s.multi) ok(ws.getCell('C4').value === null || ws.getCell('C4').value === undefined, 'no bars when numbers go below zero');
+    if (s.parts) ok(ws.getCell(5 + s.n, 1).value === 'Total' && ws.getCell(5 + s.n, 2).value === s.total && ws.getCell('C5').numFmt === '0.0%', 'shares and a total');
+    if (s.multi) {
+      const hdr = ws.getRow(4).values.filter(v => v !== undefined);
+      ok(s.counts ? hdr[hdr.length - 1] === 'Sum' : hdr[hdr.length - 1] !== 'Sum', s.counts ? 'sums for counts' : 'no sums for measures');
+      const heated = s.series.some((sr, q) => sr.values.some((v, j) => v > 0 && ws.getCell(5 + j, 2 + q).fill && ws.getCell(5 + j, 2 + q).fill.fgColor && ws.getCell(5 + j, 2 + q).fill.fgColor.argb !== 'FFFFFFFF'));
+      ok(heated, 'a heat map');
+    }
+    const facts = [];
+    about.eachRow(r => facts.push(String(r.getCell(1).value)));
+    ok(facts.includes('Question') && facts.includes('Made with'), 'the About sheet says where the numbers came from');
+    const texts = s.series.some(sr => sr.texts.some((x, j) => x && sr.values[j] == null));
+    if (texts) ok(facts.includes('Note'), 'a note about values kept as written');
+  }
   const grid = document.getElementById('grid');
   const results = [];
   for (const c of CASES) {
@@ -176,6 +241,7 @@
       if (w.table) {
         card.querySelector('.ac-btn[aria-pressed]').click();
         ok(card.querySelectorAll('.ac-table tbody tr').length === w.table, 'table rows ' + card.querySelectorAll('.ac-table tbody tr').length);
+        await checkXlsx(c, s, {}, ok);
       }
       finish(c, out); continue;
     }
@@ -214,22 +280,48 @@
       ch.canvas.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
       await frames();
     }
+    // full color (after the hover above has faded back)
+    await sleep(700);
+    const meta0 = ch.getDatasetMeta(0), bg = j => meta0.data[j] && meta0.data[j].options.backgroundColor;
+    // colors as the canvas reads them (Chart.js may hand back rgba() after an animation)
+    const hex = c => { if (typeof c !== 'string') return c; g.fillStyle = '#000000'; g.fillStyle = c; return String(g.fillStyle).toLowerCase(); };
+    if (w.colors === 'palette') ok(PALETTE.slice(0, s.n).every((c, j) => hex(bg(j)) === c), 'each category its own color');
+    if (w.colors === 'ramp' || (c.name === 'top 10, long names')) ok(hex(bg(0)) === PALETTE[0] && hex(bg(s.n - 1)) === PALETTE[1], 'ordered or long: teal to purple');
+    if (s.parts) {
+      const segs = [...card.querySelectorAll('.ac-strip span')];
+      ok(segs.length === s.series[0].values.filter(v => v > 0).length, `the strip has a part for each (${segs.length})`);
+      ok(segs.every((sg, j) => sg.style.background && hex(bg(j)) === PALETTE[j]), 'bars and strip share the palette');
+    }
+    if (s.type === 'line' && !s.multi) ok(ch.getDatasetMeta(0).dataset.options.borderColor instanceof CanvasGradient, 'the line runs teal to purple');
+    if (s.multi && s.type === 'bar') ok(meta0.data.some(b => b.options.backgroundColor instanceof CanvasGradient), 'grouped bars fade in along their length');
+    if (w.band) ok(ch.data.datasets[0].fill === '+1', 'the band between two readings is shaded');
+    if (w.colors === 'palette') {
+      const b1 = meta0.data[1], r1 = ch.canvas.getBoundingClientRect();
+      ch.canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: r1.left + b1.x, clientY: r1.top + (b1.y + b1.base) / 2, bubbles: true }));
+      await frames(); await sleep(30);
+      ok(getComputedStyle(card.querySelector('.ac-tip .tr i')).backgroundColor === 'rgb(123, 31, 162)', 'the hover key takes the bar’s color');
+      ch.canvas.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      await frames();
+    }
     // the table and back
     const tb = card.querySelector('.ac-btn[aria-pressed]');
     tb.click();
     const rowsShown = card.querySelectorAll('.ac-table tbody tr').length;
     ok(rowsShown === s.n && !card.querySelector('.ac-table').hidden && card.querySelector('.ac-plot').hidden, `table shows ${rowsShown} rows`);
+    ok(!card.querySelector('.ac-plain').hidden && card.querySelector('.ac-plain .ac-link'), 'the table offers plain CSV');
     tb.click();
     ok(card.querySelector('.ac-table').hidden && !card.querySelector('.ac-plot').hidden, 'back to the chart');
     // the CSV
     const csv = Charts._csv(s), lines = csv.trimEnd().split('\r\n');
     ok(lines.length === s.n + 1, `CSV has ${lines.length} lines`);
     if (w.csvHead) ok(lines[0] === w.csvHead, 'CSV header ' + lines[0]);
+    await checkXlsx(c, s, w.xls || {}, ok);
     // the image, for a few
-    if (w.png || ['top 10, long names', 'grouped bars', 'ten series', 'one patient, readings'].includes(c.name)) {
+    if (w.png || ['top 10, long names', 'grouped bars', 'ten series', 'one patient, readings', 'doughnut as parts'].includes(c.name)) {
       const blob = await Charts._png(s);
       ok(blob && blob.size > 2000 && blob.type === 'image/png', 'image made' + (blob ? ` (${Math.round(blob.size / 1024)} KB)` : ''));
       if (blob && c.name === 'top 10, long names') window.chartPng = URL.createObjectURL(blob);
+      if (blob && c.name === 'doughnut as parts') window.partsPng = URL.createObjectURL(blob);
     }
     finish(c, out);
   }
@@ -248,6 +340,17 @@
   const fresh = Charts.card({ type: 'bar', title: 'Fresh', data: [{ x: 'A', y: 1 }] });
   Charts.sweep();
   extra.push([!!fresh._chart && fresh._chart.canvas !== null, 'a chart about to be placed is kept']);
+  const quick = Charts.card({ type: 'bar', title: 'Shown as a table at once', label: 'Patients', data: [{ x: 'Asthma', y: 845 }, { x: 'COPD', y: 199 }] });
+  grid.prepend(quick);
+  quick.querySelector('.ac-btn[aria-pressed]').click();
+  await frames(); await sleep(150);
+  extra.push([!quick.classList.contains('ac-narrow'), 'a chart shown as a table at once keeps its button labels']);
+  quick.querySelector('.ac-btn[aria-pressed]').click();
+  for (let i = 0; i < 20 && !(quick._chart.width > 200); i++) { await frames(); await sleep(50); }
+  const full = Math.round(quick.querySelector('.ac-wrap').clientWidth);
+  extra.push([!quick.classList.contains('ac-narrow') === (full >= 440) && Math.abs(quick._chart.width - full) <= 1,
+    `and draws at full width when shown again (${quick._chart.width} of ${full})`]);
+  quick.remove();
   document.body.classList.add('view-mode');
   const viewed = Charts.card({ type: 'bar', title: 'In the printable view', data: [{ x: 'A', y: 1 }, { x: 'B', y: 2 }] });
   document.body.appendChild(viewed);

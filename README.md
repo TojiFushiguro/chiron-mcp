@@ -100,9 +100,10 @@ What the Ask tab does:
   builder, and N is Chiron's own count for them.
 - **Tables and charts** for rankings and comparisons. Two-variable breakdowns chart as
   grouped bars with a legend, so no bar is ever an unlabelled slice of the table. Every chart
-  has **Image** (a PNG with its title, the dataset and the date), **CSV** (the numbers behind
-  it) and **Table** buttons. Long names lie flat with each number at the end of its bar,
-  counts over time start at zero, and the colors are checked for color blindness.
+  has **Image** (a PNG with its title, the dataset and the date), **Excel** (the numbers as a
+  formatted spreadsheet) and **Table** buttons. Long names lie flat with each number at the
+  end of its bar, counts over time start at zero, and the colors are checked for color
+  blindness.
 - **A trace under every answer**, for finding out why one is wrong. **Trace** opens it.
   It shows a timeline of each step
   (start-up, every model call, every Chiron tool call, the server's checks), plus time,
@@ -1175,10 +1176,22 @@ the browser's print dialog saves it as a PDF.
 
 Charts are drawn in the page from the answer's ```` ```chart ```` block (one series as
 `data:[{x,y}]`, several as `x` + `series`; bar, line or doughnut), so a change to how they look
-applies to old answers too. A doughnut is drawn as ranked bars with each part's share; a value
-that is not a number (such as `<11`) is shown as written, without a bar; a line over years
-starts at zero when it counts things, and fits its range when it measures them (an average,
-one patient's readings). The Image and CSV buttons build their files in the browser.
+applies to old answers too. A doughnut is drawn as ranked bars with each part's share, under a
+strip that shows the whole; a value that is not a number (such as `<11`) is shown as written,
+without a bar; a line over years starts at zero when it counts things, and fits its range when
+it measures them (an average, one patient's readings).
+
+Colors: a few categories (and the parts of a whole) each get their own color from a palette
+checked for color blindness; ordered groups (ages, years) and long lists step from teal to
+purple; a line runs teal to purple; the band between two readings of one patient (systolic
+and diastolic) is shaded. The buttons build their files in the browser: **Image** a PNG of the
+chart at twice the size of a wide screen; **Excel** an .xlsx with the title, dataset and date,
+a frozen header, number formats (thousands, percentages, real dates), a bar beside each
+number in the chart's colors, a heat map with sums for breakdowns of counts, and an About tab
+with the question. The spreadsheet library ([ExcelJS](https://github.com/exceljs/exceljs)
+4.4.0, from cdnjs with its integrity hash) loads the first time someone presses Excel; where it
+cannot load, the button saves the numbers as CSV instead and says so. The table view also
+offers the plain CSV.
 `tests/charts_check.html` draws about fifty awkward chart blocks with the page's own code
 and checks each one (names and numbers fit, hover, table, CSV, image, no markup runs).
 

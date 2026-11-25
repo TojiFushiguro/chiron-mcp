@@ -199,7 +199,7 @@
     .topbar { height: auto; border: 0; padding: 0 0 8px; }
     .msg.user .bubble { background: #eee; color: #000; max-width: none; border-radius: 8px; }
     .ac, .table-wrap, .turn { break-inside: avoid; }
-    .ac-tools, .ac-tip { display: none !important; }
+    .ac-tools, .ac-tip, .ac-plain { display: none !important; }
     .banner { padding: 0 0 10px; }
     .banner > div { background: none; border: 0; padding: 0; }
   }
@@ -318,6 +318,16 @@
   .ac-note { padding: 10px 18px 16px; font-size: 13.5px; color: var(--muted); }
   .ac-table { padding: 8px 14px 14px; max-height: 380px; overflow: auto; }
   .ac-table th { position: sticky; top: 0; z-index: 1; }
+  .ac-strip { display: flex; gap: 2px; height: 26px; margin: 12px 18px 0; }
+  .ac-strip span {
+    flex: 1 1 0; min-width: 2px; display: flex; align-items: center; overflow: hidden; white-space: nowrap;
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .ac-strip span:first-child { border-radius: 6px 0 0 6px; }
+  .ac-strip span:last-child { border-radius: 0 6px 6px 0; }
+  .ac-strip span:only-child { border-radius: 6px; }
+  .ac-plain { padding: 9px 18px 13px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line-2); }
+  .ac-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-strong); text-decoration: underline; cursor: pointer; }
   .ac-table .n { text-align: right; }
 
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -1422,7 +1432,7 @@ function paintBot(body, turn) {
   }
   if (turn.answer) {
     const a = el('div', 'answer');
-    render(a, turn.answer);
+    render(a, turn.answer, { question: turn.q });
     body.appendChild(a);
   }
   if (turn.error) body.appendChild(el('div', 'err', turn.error));
@@ -1745,7 +1755,7 @@ function loadButton(body, cohort) {
 }
 
 // --- rendering an answer --------------------------------------------------------------
-function render(target, markdown) {
+function render(target, markdown, meta) {
   Charts.sweep();
   // Pull out ```chart blocks before markdown parsing, and draw them with Chart.js (see Charts).
   const charts = [];
@@ -1777,7 +1787,7 @@ function render(target, markdown) {
   });
 
   target.querySelectorAll('[data-chart]').forEach(slot => {
-    const card = Charts.card(charts[Number(slot.dataset.chart)]);
+    const card = Charts.card(charts[Number(slot.dataset.chart)], meta);
     if (card) slot.replaceWith(card); else slot.remove();
   });
 }
@@ -1799,8 +1809,13 @@ function dayOf(x) {
 //   they fit, else a value axis does.
 // - Counts over time start at zero, with the latest value and the peak labelled;
 //   measurements (averages, one patient's readings) get an axis fitted to them.
-// - Colors come in a fixed order, checked for color blindness (neighbours, and the first
-//   three in any pairing); a series past the eighth is gray.
+// - Full color: each of a few categories, and each part of a whole, has its own color from a
+//   palette checked for color blindness (a series or part past the eighth is gray); ordered
+//   groups (ages, years) and long lists step from teal to purple; a line runs teal to purple
+//   over a soft shade; parts of a whole also get a strip that shows the whole at a glance.
+// - Image saves the chart as a PNG. Excel saves its numbers as a formatted spreadsheet, built
+//   in the browser with ExcelJS (loaded the first time; plain CSV when it cannot load, and in
+//   the table view). Table shows the numbers in the page.
 // - A value that is not a number ("<11") is shown as written, without a bar.
 const Charts = (() => {
   const PALETTE = ['#00897b', '#7b1fa2', '#ef6c00', '#d81b60', '#ff8f00', '#e53935', '#1e88e5', '#388e3c'];
@@ -1819,10 +1834,18 @@ const Charts = (() => {
   // or measures them (an axis fitted to the values).
   const MEASURES = /%|\b(average|avg|mean|median|rate|percent(age)?|share|age|bmi|scores?|mmhg|mg|kg|lbs?|levels?|pressure|ratio|index|weight|height|temperature|glucose|a1c|hba1c|cholesterol)\b/i;
   const COUNTS = /\b(patients?|people|persons?|subjects?|diagnos\w*|visits?|encounters?|cases?|counts?|number|admissions?|prescriptions?|records?|events?|procedures?|conditions?|medications?|claims?|deaths?|births?)\b/i;
+  // Labels that are steps on a scale (ages, ranges, numbers): ordered groups.
+  const ORDERED = /^\s*(?:[<>≤≥]=?\s*)?\d[\d,.]*\s*(?:(?:-|–|to)\s*\d[\d,.]*)?\s*(?:\+|years?|yrs?|y|months?|mo|days?|d|%)?\s*$/i;
   const DRAWN = new Set();     // charts already shown once: a repaint does not animate them again
   let measurer = null;
 
   const color = i => (i < PALETTE.length ? PALETTE[i] : GRAYS[(i - PALETTE.length) % GRAYS.length]);
+  const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const mix = (a, b, t) => { const x = hexRGB(a), y = hexRGB(b); return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+  // teal, blue, purple: the run of colors for ordered groups, long lists and lines
+  const ramp = t => (t <= 0.5 ? mix(PALETTE[0], PALETTE[6], t * 2) : mix(PALETTE[6], PALETTE[1], (t - 0.5) * 2));
+  // text on a colored fill: near-black on light colors (amber, light gray), white on the rest
+  const inkOn = h => { const [r, g, b] = hexRGB(h); return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? INK : SURFACE; };
   const reducedMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   function number(v) {
     if (v == null || !isFinite(v)) return '';
@@ -1914,14 +1937,41 @@ const Charts = (() => {
     const title = spec.title == null ? '' : String(spec.title).trim();
     const said = unit || title;
     const zero = type === 'bar' || (MEASURES.test(said) ? false : COUNTS.test(said) ? true : !dates && ints);
+    const ordered = n > 1 && (years || dates || labels.every(l => ORDERED.test(l) || /^q[1-4](\s+\d{4})?$/i.test(l)));
+    // whole numbers of things, so a row or column can be summed
+    const counts = ints && !negative && !MEASURES.test(said);
     return {
       title, unit, unitWord: /^[A-Z][a-z]+( [a-z]+)*$/.test(unit) ? unit.toLowerCase() : unit,
-      labels, series, n, type, years, dates, multi, negative, ints, total, parts, horizontal, zero,
+      labels, series, n, type, years, dates, multi, negative, ints, total, parts, horizontal, zero, ordered, counts,
       empty: !values.length, texts: series.some(sr => sr.texts.some(Boolean)),
       // sideways bars always carry their numbers; upright ones when the numbers fit
       tips: type === 'bar' && !multi && !negative && horizontal,
       caps: type === 'bar' && !multi && !negative && !horizontal && n <= 12,
     };
+  }
+  // The color of one bar or point of a single series: its own palette color for a few
+  // categories and for the parts of a whole, a step from teal to purple for ordered groups,
+  // long lists and along a line.
+  function itemColor(s, i) {
+    if (s.multi || s.parts) return color(i);
+    if (s.type === 'line' || s.ordered || s.n > 8) return ramp(s.n > 1 ? i / (s.n - 1) : 0);
+    return s.n === 1 ? PALETTE[0] : color(i);
+  }
+  // One whole at a glance: its parts side by side, each in its color, its share where it fits.
+  function stripOf(s) {
+    const strip = el('div', 'ac-strip');
+    strip.setAttribute('aria-hidden', 'true');
+    s.series[0].values.forEach((v, i) => {
+      if (!(v > 0)) return;
+      const p = v / s.total * 100, seg = el('span'), c = itemColor(s, i);
+      seg.style.flexGrow = String(p);
+      seg.style.background = c;
+      seg.style.color = inkOn(c);
+      if (p >= 7) { seg.textContent = share(s, i); seg.style.paddingLeft = '8px'; }
+      seg.title = `${s.labels[i]}: ${s.series[0].texts[i]} (${share(s, i)})`;
+      strip.appendChild(seg);
+    });
+    return strip;
   }
   function share(s, i) {
     const v = s.series[0].values[i];
@@ -1932,10 +1982,11 @@ const Charts = (() => {
   const endText = (s, k) => { const sr = s.series[k], j = lastIndex(sr.values); return j < 0 ? '' : (s.multi ? `${sr.label} ${sr.texts[j]}` : sr.texts[j]); };
   const rowHeight = s => (s.multi ? s.series.length * 16 + 14 : s.n <= 15 ? 32 : s.n <= 30 ? 26 : 22);
   const height = s => (s.horizontal ? Math.max(110, s.n * rowHeight(s) + 12) : 270);
-  function subtitle(s) {
+  function subtitleParts(s) {
     const what = s.parts ? `Share of ${number(s.total)}${s.unitWord ? ' ' + s.unitWord : ''}` : s.unit;
-    return [what, DATASET ? DATASET_NAME : ''].filter(Boolean).join(' · ');
+    return [what, DATASET ? DATASET_NAME : ''].filter(Boolean);
   }
+  const subtitle = s => subtitleParts(s).join(' · ');
   // Grouped bars: each bar at most 24 px wide, the bars of a group 2 px apart.
   function fitGroups(datasets, s, width, k) {
     const span = Math.max(120, (width || 640) - 56 * k);
@@ -1959,26 +2010,70 @@ const Charts = (() => {
     const top = most(values, v => Math.abs(v));
     const thick = s.horizontal ? (s.multi ? 14 : s.n <= 15 ? 18 : s.n <= 30 ? 16 : 14) : 24;
 
+    // gradients need the plot's size, so they are made when Chart.js asks for a color
+    const across = (stops, ctx) => {
+      const a = ctx.chart.chartArea;
+      if (!a) return stops[0];
+      const g = ctx.chart.ctx.createLinearGradient(a.left, 0, a.right, 0);
+      stops.forEach((c, j) => g.addColorStop(j / (stops.length - 1), c));
+      return g;
+    };
+    const down = (top, bottom, ctx) => {
+      const a = ctx.chart.chartArea;
+      if (!a) return top;
+      const g = ctx.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+      g.addColorStop(0, top); g.addColorStop(1, bottom);
+      return g;
+    };
+    // a grouped bar fades in along its own length, so a short bar still ends in full color
+    const along = (c, ctx) => {
+      const ch = ctx.chart, vs = s.horizontal ? ch.scales.x : ch.scales.y;
+      if (!ch.chartArea || ctx.type !== 'data' || !ctx.parsed || !vs) return c;
+      const v = s.horizontal ? ctx.parsed.x : ctx.parsed.y;
+      if (v == null || !isFinite(v)) return c;
+      const p0 = vs.getPixelForValue(0), p1 = vs.getPixelForValue(v);
+      if (!isFinite(p0) || !isFinite(p1) || Math.abs(p1 - p0) < 1) return c;
+      const g = s.horizontal ? ch.ctx.createLinearGradient(p0, 0, p1, 0) : ch.ctx.createLinearGradient(0, p0, 0, p1);
+      g.addColorStop(0, mix(c, SURFACE, 0.55)); g.addColorStop(1, c);
+      return g;
+    };
+    // two readings of one patient where the first is never below the second (systolic and
+    // diastolic): the band between them is shaded
+    const band = s.type === 'line' && s.dates && s.series.length === 2 && s.labels.some((_, j) => s.series[0].values[j] != null && s.series[1].values[j] != null)
+      && s.labels.every((_, j) => { const a = s.series[0].values[j], b = s.series[1].values[j]; return a == null || b == null || a >= b; });
     const datasets = s.series.map((sr, i) => {
       const c = color(i), last = lastIndex(sr.values);
       const data = xs ? sr.values.map((y, j) => ({ x: xs[j], y })) : sr.values.slice();
       if (s.type === 'line') {
-        const area = !s.multi && s.zero && !s.negative;     // a wash only where the axis starts at zero
+        const area = !s.multi && s.zero && !s.negative;     // a shade only where the axis starts at zero
         const dots = s.dates && !many;
+        const point = s.multi ? c : (ctx => itemColor(s, ctx.dataIndex ?? 0));
         return {
-          label: sr.label, data, borderColor: c, borderWidth: 2 * k, borderCapStyle: 'round', borderJoinStyle: 'round',
+          label: sr.label, data, borderWidth: 2.5 * k, borderCapStyle: 'round', borderJoinStyle: 'round',
+          borderColor: s.multi ? c : (ctx => across([ramp(0), ramp(0.5), ramp(1)], ctx)),
           tension: 0, cubicInterpolationMode: s.dates ? 'default' : 'monotone', spanGaps: true,
-          fill: area ? 'origin' : false, backgroundColor: area ? rgba(c, 0.1) : c,
+          fill: area ? 'origin' : band && i === 0 ? '+1' : false,
+          backgroundColor: area ? (ctx => down(rgba(PALETTE[6], 0.24), rgba(PALETTE[6], 0), ctx))
+            : band && i === 0 ? (ctx => down(rgba(PALETTE[0], 0.2), rgba(PALETTE[1], 0.2), ctx)) : c,
           pointRadius: ctx => (ctx.dataIndex === last ? 5 * k : dots ? 4.5 * k : 0),
-          pointBackgroundColor: c, pointBorderColor: SURFACE, pointBorderWidth: 2 * k,
-          pointHoverRadius: 5.5 * k, pointHoverBorderWidth: 2 * k, pointHoverBackgroundColor: c, pointHoverBorderColor: SURFACE,
+          pointBackgroundColor: point, pointBorderColor: SURFACE, pointBorderWidth: 2 * k,
+          pointHoverRadius: 5.5 * k, pointHoverBorderWidth: 2 * k, pointHoverBackgroundColor: point, pointHoverBorderColor: SURFACE,
           pointHitRadius: 10 * k, clip: 14 * k,
         };
       }
+      if (s.multi) {
+        return {
+          label: sr.label, data, backgroundColor: ctx => along(c, ctx), hoverBackgroundColor: darker(c, 0.12), borderWidth: 0,
+          borderRadius: 4 * k, borderSkipped: 'start', maxBarThickness: thick * k,
+          categoryPercentage: 0.8, barPercentage: 24 / 26,
+        };
+      }
       return {
-        label: sr.label, data, backgroundColor: c, hoverBackgroundColor: darker(c, 0.14), borderWidth: 0,
+        label: sr.label, data, borderWidth: 0,
+        backgroundColor: ctx => itemColor(s, ctx.dataIndex ?? 0),
+        hoverBackgroundColor: ctx => darker(itemColor(s, ctx.dataIndex ?? 0), 0.14),
         borderRadius: 4 * k, borderSkipped: 'start', maxBarThickness: thick * k,
-        categoryPercentage: 0.8, barPercentage: s.multi ? 24 / 26 : 0.9,
+        categoryPercentage: 0.8, barPercentage: 0.9,
       };
     });
     if (s.type === 'bar' && s.multi && !s.horizontal) fitGroups(datasets, s, width, k);
@@ -2075,7 +2170,8 @@ const Charts = (() => {
     };
   }
   function relayout(chart, s, st, width, k) {
-    if (!chart.canvas || !chart.canvas.isConnected) return;
+    // a chart hidden behind its table measures 0 wide: nothing to fit until it is shown again
+    if (!width || !chart.canvas || !chart.canvas.isConnected) return;
     if (st.card) st.card.classList.toggle('ac-narrow', width < 440);
     let changed = false;
     if (s.type === 'bar' && s.multi && !s.horizontal) {
@@ -2129,7 +2225,7 @@ const Charts = (() => {
           if (isFinite(th) && th > 0) thick = th;
         }
         if (s.horizontal) {
-          if (v != null && v !== 0 && Math.abs(end - base) < 2 * k) { g.fillStyle = color(0); g.fillRect(base, at - thick / 2, 2 * k, thick); end = base + 2 * k; }
+          if (v != null && v !== 0 && Math.abs(end - base) < 2 * k) { g.fillStyle = itemColor(s, i); g.fillRect(base, at - thick / 2, 2 * k, thick); end = base + 2 * k; }
           const x = Math.max(end, base) + 7 * k;
           g.textBaseline = 'middle'; g.textAlign = 'left'; g.font = vf; g.fillStyle = INK2;
           const shown = fit(t, Math.max(16 * k, chart.width - x - 4 * k), vf);
@@ -2140,7 +2236,7 @@ const Charts = (() => {
             if (x + w + measure(' · ' + sh, sf) <= chart.width - 2 * k) { g.font = sf; g.fillStyle = MUTED; g.fillText(' · ' + sh, x + w, at); }
           }
         } else {
-          if (v != null && v !== 0 && Math.abs(base - end) < 2 * k) { g.fillStyle = color(0); g.fillRect(at - thick / 2, base - 2 * k, thick, 2 * k); end = base - 2 * k; }
+          if (v != null && v !== 0 && Math.abs(base - end) < 2 * k) { g.fillStyle = itemColor(s, i); g.fillRect(at - thick / 2, base - 2 * k, thick, 2 * k); end = base - 2 * k; }
           g.textBaseline = 'bottom'; g.textAlign = 'center'; g.font = cf; g.fillStyle = INK2;
           g.fillText(t, at, Math.min(end, base) - 5 * k);
         }
@@ -2173,7 +2269,7 @@ const Charts = (() => {
         const p = m >= 0 && data[m], q = j >= 0 && data[j];
         if (p && q && m !== j && isFinite(p.x) && isFinite(p.y) && q.x - p.x > 40 * k) {
           g.beginPath(); g.arc(p.x, p.y, 3.5 * k, 0, Math.PI * 2);
-          g.fillStyle = color(0); g.fill(); g.lineWidth = 2 * k; g.strokeStyle = SURFACE; g.stroke();
+          g.fillStyle = itemColor(s, m); g.fill(); g.lineWidth = 2 * k; g.strokeStyle = SURFACE; g.stroke();
           g.textAlign = 'center'; g.textBaseline = 'bottom'; g.font = `500 ${12 * k}px ${FONT}`; g.fillStyle = INK2;
           g.fillText(s.series[0].texts[m], p.x, p.y - 8 * k);
         }
@@ -2195,7 +2291,7 @@ const Charts = (() => {
         const sr = s.series[dp.datasetIndex];
         if (!sr) return;
         const row = el('div', 'tr'), key = el('i');
-        key.style.background = color(dp.datasetIndex);
+        key.style.background = s.multi ? color(dp.datasetIndex) : itemColor(s, dp.dataIndex);
         const extra = s.multi ? sr.label : s.parts ? [s.unitWord, share(s, dp.dataIndex)].filter(Boolean).join(' · ') : s.unitWord;
         row.append(key, el('b', null, sr.texts[dp.dataIndex] || ''), el('span', null, extra));
         tip.appendChild(row);
@@ -2262,6 +2358,28 @@ const Charts = (() => {
 
   // The image: the chart drawn again at twice the size of a wide screen, with its title,
   // subtitle and legend, and a footer naming the dataset and the day.
+  function drawStrip(g, s, x, y, w, h) {
+    const parts = s.series[0].values.map((v, i) => ({ v, i })).filter(p => p.v > 0);
+    if (!parts.length) return;
+    const gap = 2, avail = w - gap * (parts.length - 1);
+    const raw = parts.map(p => Math.max(2, avail * p.v / s.total)), scale = avail / raw.reduce((a, b) => a + b, 0);
+    let cx = x;
+    g.save();
+    parts.forEach((p, j) => {
+      const pw = raw[j] * scale, c = itemColor(s, p.i), r = 6, first = j === 0, end = j === parts.length - 1;
+      g.fillStyle = c;
+      g.beginPath();
+      roundRect(g, cx, y, pw, h, [first ? r : 0, end ? r : 0, end ? r : 0, first ? r : 0]);
+      g.fill();
+      const label = share(s, p.i), font = `600 14px ${FONT}`;
+      if (p.v / s.total >= 0.07 && measure(label, font) + 16 <= pw) {
+        g.font = font; g.fillStyle = inkOn(c); g.textBaseline = 'middle'; g.textAlign = 'left';
+        g.fillText(label, cx + 8, y + h / 2 + 1);
+      }
+      cx += pw + gap;
+    });
+    g.restore();
+  }
   function roundRect(g, x, y, w, h, r) { if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
   function wrapLines(text, font, maxW, max) {
     const lines = [];
@@ -2300,7 +2418,8 @@ const Charts = (() => {
         });
       }
       const legendH = s.multi ? ky + 36 : 0;
-      const H = PAD + lines.length * 34 + (sub ? 30 : 0) + 14 + legendH + plotH + 26 + 1 + 16 + 18 + PAD - 8;
+      const stripH = s.parts ? 42 : 0;
+      const H = PAD + lines.length * 34 + (sub ? 30 : 0) + 14 + legendH + stripH + plotH + 26 + 1 + 16 + 18 + PAD - 8;
       out.width = W * R; out.height = Math.round(H * R);
       g.scale(R, R);
       g.fillStyle = SURFACE; g.fillRect(0, 0, W, H);
@@ -2318,6 +2437,7 @@ const Charts = (() => {
         g.font = L; g.fillStyle = INK2; g.fillText(kk.name, x + (s.type === 'line' ? 26 : 21), yy);
       });
       y += legendH;
+      if (s.parts) { drawStrip(g, s, PAD, y, innerW, 28); y += stripH; }
       g.drawImage(cv, PAD, y, innerW, plotH);
       y += plotH + 26;
       g.fillStyle = LINE; g.fillRect(PAD, y, innerW, 1);
@@ -2332,9 +2452,161 @@ const Charts = (() => {
     }
   }
 
+  // The Excel button's spreadsheet, built in the browser with ExcelJS, loaded the first time.
+  const EXCELJS = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+  const EXCELJS_SRI = 'sha512-dlPw+ytv/6JyepmelABrgeYgHI0O+frEwgfnPdXDTOIZz+eDgfW07QXG02/O8COfivBdGNINy+Vex+lYmJ5rxw==';
+  let excelLib = null;
+  function loadExcel() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!excelLib) {
+      excelLib = new Promise((ok, fail) => {
+        const sc = document.createElement('script');
+        sc.src = EXCELJS; sc.integrity = EXCELJS_SRI; sc.crossOrigin = 'anonymous'; sc.referrerPolicy = 'no-referrer';
+        sc.onload = () => (window.ExcelJS ? ok(window.ExcelJS) : fail(new Error('ExcelJS did not load')));
+        sc.onerror = () => { sc.remove(); fail(new Error('ExcelJS could not load')); };
+        document.head.appendChild(sc);
+      }).catch(err => { excelLib = null; throw err; });
+    }
+    return excelLib;
+  }
+  const ARGB = h => 'FF' + h.slice(1).toUpperCase();
+  const solid = h => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: ARGB(h) } });
+  // Excel's rules for a sheet's name: at most 31 characters, none of []:*?/\, not "History"
+  function sheetName(t) {
+    const n = String(t || '').replace(/[\[\]:*?\/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31).replace(/^['\s]+|['\s]+$/g, '');
+    return !n || /^history$/i.test(n) ? 'Chart' : n;
+  }
+  // a bar of whole block characters (one glyph draws the same in every font); a value too
+  // small for one block gets a thin sliver
+  function blocks(v, max) {
+    if (!(v > 0) || !(max > 0)) return '';
+    const units = v / max * 30;
+    return units < 0.75 ? '▏' : '█'.repeat(Math.max(1, Math.round(units)));
+  }
+  function excelDate(label) {
+    const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/.exec(label);
+    return m ? new Date(Date.UTC(+m[1], m[2] ? +m[2] - 1 : 0, m[3] ? +m[3] : 1)) : label;
+  }
+  async function xlsxOf(s, meta) {
+    const ExcelJS = await loadExcel();
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Ask in Chiron';
+    wb.created = new Date();
+    const when = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const name = sheetName(s.title);
+    const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
+    ws.getCell('A1').value = s.title || 'Chart';
+    ws.getCell('A1').font = { size: 15, bold: true, color: { argb: ARGB(INK) } };
+    ws.getRow(1).height = 24;
+    ws.getCell('A2').value = [...subtitleParts(s), when, 'Made with Ask in Chiron'].join('   ·   ');
+    ws.getCell('A2').font = { size: 10, color: { argb: ARGB(MUTED) } };
+    // a series written as percentages ("12.5%") is kept as real percentages
+    const percent = sr => { const xs = sr.values.map((v, j) => [v, sr.texts[j]]).filter(([v]) => v != null); return xs.length > 0 && xs.every(([, t]) => /%\s*$/.test(t)); };
+    const kindOf = sr => (percent(sr) ? 'pct' : sr.values.every(v => v == null || Number.isInteger(v)) ? 'int' : 'dec');
+    const NUMFMT = { int: '#,##0', dec: '#,##0.0###', pct: '0.0#%', share: '0.0%' };
+    const valueOf = (sr, j, kind) => { const v = sr.values[j]; if (v == null) return sr.texts[j] || null; return kind === 'pct' ? v / 100 : v; };
+    const cols = [{ name: s.years ? 'Year' : s.dates ? 'Date' : 'Category', kind: 'first' }];
+    if (!s.multi) {
+      cols.push({ name: s.unit || 'Value', kind: kindOf(s.series[0]) });
+      if (s.parts) cols.push({ name: 'Share', kind: 'share' });
+      if (!s.negative) cols.push({ name: '', kind: 'bar' });
+    } else {
+      s.series.forEach(sr => cols.push({ name: sr.label, kind: kindOf(sr), series: true }));
+      if (s.counts) cols.push({ name: 'Sum', kind: 'int' });
+    }
+    const all = s.series.flatMap(sr => sr.values).filter(v => v != null);
+    const top = most(all, v => Math.abs(v)) || 1;
+    const rows = s.labels.map((lab, j) => {
+      const cells = [s.years ? Number(lab) : s.dates ? excelDate(lab) : lab], style = {};
+      if (!s.multi) {
+        const sr = s.series[0];
+        cells.push(valueOf(sr, j, cols[1].kind));
+        if (s.parts) cells.push(sr.values[j] != null ? sr.values[j] / s.total : null);
+        if (!s.negative) cells.push(blocks(sr.values[j], top));
+        style.bar = itemColor(s, j);
+        if (s.parts || (s.type === 'bar' && !s.ordered && s.n > 1 && s.n <= 8)) style.swatch = itemColor(s, j);
+      } else {
+        s.series.forEach((sr, q) => cells.push(valueOf(sr, j, cols[q + 1].kind)));
+        if (s.counts) cells.push(s.series.reduce((a, sr) => a + (sr.values[j] || 0), 0));
+        style.heat = s.series.map((sr, q) => {
+          const v = sr.values[j];
+          if (v == null || v < 0) return null;
+          const bg = mix(SURFACE, color(q), 0.08 + 0.72 * v / top);
+          return { bg, fg: inkOn(bg) };
+        });
+      }
+      return { cells, style };
+    });
+    if (s.parts) rows.push({ cells: ['Total', s.total, 1, ''], style: { total: true } });
+    if (s.multi && s.counts) {
+      const sums = s.series.map(sr => sr.values.reduce((a, v) => a + (v || 0), 0));
+      rows.push({ cells: ['Sum', ...sums, sums.reduce((a, v) => a + v, 0)], style: { total: true } });
+    }
+    const head = ws.getRow(4);
+    head.height = 22;
+    cols.forEach((c, i) => {
+      const cell = head.getCell(i + 1);
+      cell.value = c.name || null;
+      cell.font = { bold: true, color: { argb: ARGB(SURFACE) } };
+      cell.fill = solid(PALETTE[0]);
+      cell.alignment = { vertical: 'middle', horizontal: c.kind === 'first' || c.kind === 'bar' ? 'left' : 'right', indent: 1 };
+    });
+    rows.forEach((r, j) => {
+      const row = ws.getRow(5 + j);
+      row.height = 18;
+      r.cells.forEach((v, i) => {
+        const c = cols[i], cell = row.getCell(i + 1);
+        cell.value = v === '' ? null : v;
+        const font = {}, border = { bottom: { style: 'hair', color: { argb: ARGB(LINE) } } };
+        if (!r.style.total && j % 2 === 1) cell.fill = solid('#f7f8f9');
+        if (c.kind === 'first') {
+          if (s.years && typeof v === 'number') cell.numFmt = '0';
+          if (v instanceof Date) cell.numFmt = /^\d{4}-\d{2}-\d{2}$/.test(s.labels[j]) ? 'mmm d, yyyy' : 'mmm yyyy';
+          if (r.style.swatch) border.left = { style: 'thick', color: { argb: ARGB(r.style.swatch) } };
+        } else if (c.kind === 'bar') {
+          font.color = { argb: ARGB(r.style.bar || PALETTE[0]) };
+          font.size = 10;
+        } else if (typeof v === 'number') {
+          cell.numFmt = NUMFMT[c.kind] || NUMFMT.int;
+        } else if (typeof v === 'string' && v) {
+          font.italic = true;
+          font.color = { argb: ARGB(MUTED) };
+        }
+        const heat = c.series && r.style.heat ? r.style.heat[i - 1] : null;
+        if (heat) { cell.fill = solid(heat.bg); font.color = { argb: ARGB(heat.fg) }; }
+        if (r.style.total) { font.bold = true; border.top = { style: 'medium', color: { argb: ARGB(INK) } }; }
+        cell.font = font;
+        cell.border = border;
+        cell.alignment = { vertical: 'middle', horizontal: (c.kind === 'first' && !(s.years && typeof v === 'number')) || c.kind === 'bar' ? 'left' : 'right', indent: c.kind === 'bar' ? 0 : 1 };
+      });
+    });
+    const textLen = v => (v instanceof Date ? 12 : v == null ? 0 : typeof v === 'number' ? number(v).length + 1 : String(v).length);
+    cols.forEach((c, i) => {
+      const longest = rows.reduce((m, r) => Math.max(m, textLen(r.cells[i])), String(c.name || '').length);
+      ws.getColumn(i + 1).width = c.kind === 'bar' ? 34 : Math.min(c.kind === 'first' ? 50 : 20, Math.max(c.kind === 'first' ? 12 : 10, longest + 3));
+    });
+    ws.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+    const about = wb.addWorksheet(name.toLowerCase() === 'about' ? 'Notes' : 'About', { views: [{ showGridLines: false }] });
+    const written = s.series.some(sr => sr.texts.some((x, j) => x && sr.values[j] == null));
+    [['Chart', s.title || 'Chart'], ['Question', meta && meta.question], ['Dataset', DATASET ? DATASET_NAME : ''], ['Counted', s.unit],
+     ['Downloaded', when], ['Made with', 'Ask in Chiron'],
+     ['Note', written ? 'Values that are not numbers (such as "<11") are kept as written.' : '']]
+      .filter(([, v]) => v).forEach(([key, v], i) => {
+        const row = about.getRow(i + 1);
+        row.getCell(1).value = key;
+        row.getCell(1).font = { bold: true, color: { argb: ARGB(INK2) } };
+        row.getCell(2).value = String(v);
+        row.getCell(2).alignment = { wrapText: true, vertical: 'top' };
+      });
+    about.getColumn(1).width = 14;
+    about.getColumn(2).width = 90;
+    const buf = await wb.xlsx.writeBuffer();
+    return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
   const ICONS = {
     image: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m20 16-4.5-4.5L8 19"/></svg>',
-    csv: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 19h14"/></svg>',
+    download: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M5 19h14"/></svg>',
     table: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M3 14.5h18M9.5 4v16"/></svg>',
     chart: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-9M12 20V5M19 20v-6"/></svg>',
   };
@@ -2351,7 +2623,7 @@ const Charts = (() => {
   }
 
   // One chart: a card for the answer, or null when the block is not a chart at all.
-  function card(spec) {
+  function card(spec, meta) {
     const s = read(spec);
     if (!s) return null;
     const box = el('figure', 'ac');
@@ -2363,27 +2635,43 @@ const Charts = (() => {
     box.appendChild(head);
     const tools = el('div', 'ac-tools');
     const bImg = tool('image', 'Image', 'Download this chart as an image (PNG)');
-    const bCsv = tool('csv', 'CSV', 'Download the numbers behind this chart (CSV)');
+    const bXls = tool('download', 'Excel', 'Download the numbers as an Excel file');
     const bTab = tool('table', 'Table', 'Show the numbers as a table');
     bTab.setAttribute('aria-pressed', 'false');
-    tools.append(bImg, bCsv, bTab);
+    tools.append(bImg, bXls, bTab);
     head.appendChild(tools);
     const table = el('div', 'ac-table');
     table.hidden = true;
+    const csv = () => save(new Blob(['﻿' + csvOf(s)], { type: 'text/csv;charset=utf-8' }), fileName(s, 'csv'));
+    const plain = el('div', 'ac-plain'), link = el('button', 'ac-link', 'plain CSV');
+    plain.hidden = true;
+    link.type = 'button';
+    link.onclick = csv;
+    plain.append('Also as ', link, ', for other tools.');
     const showTable = on => {
       bTab.setAttribute('aria-pressed', String(on));
       if (on && !table.firstChild) table.appendChild(tableOf(s));
       table.hidden = !on;
-      box.querySelectorAll('.ac-legend, .ac-plot').forEach(n => { n.hidden = on; });
+      plain.hidden = !on;
+      box.querySelectorAll('.ac-legend, .ac-strip, .ac-plot').forEach(n => { n.hidden = on; });
       if (on) setTool(bTab, 'chart', 'Chart', 'Show the chart again'); else setTool(bTab, 'table', 'Table', 'Show the numbers as a table');
     };
     bTab.onclick = () => showTable(bTab.getAttribute('aria-pressed') !== 'true');
-    bCsv.onclick = () => save(new Blob(['﻿' + csvOf(s)], { type: 'text/csv;charset=utf-8' }), fileName(s, 'csv'));
+    bXls.onclick = async () => {
+      if (bXls.classList.contains('busy')) return;
+      bXls.classList.add('busy');
+      try { save(await xlsxOf(s, meta), fileName(s, 'xlsx')); }
+      catch (_) {
+        // the spreadsheet library could not load here (offline, blocked): the numbers as CSV
+        csv();
+        setTool(bXls, 'download', 'Excel', 'Excel could not load here, so the numbers were saved as CSV');
+      } finally { bXls.classList.remove('busy'); }
+    };
     if (s.empty) {
       // nothing to draw: say so, and keep the table when there is text such as "<11"
       bImg.hidden = true;
       if (!s.texts) tools.hidden = true;
-      box.append(el('div', 'ac-note', 'No numbers to chart.'), table);
+      box.append(el('div', 'ac-note', 'No numbers to chart.'), table, plain);
       return box;
     }
     let legend = null;
@@ -2408,6 +2696,7 @@ const Charts = (() => {
       });
       box.appendChild(legend);
     }
+    if (s.parts) box.appendChild(stripOf(s));
     const plot = el('div', 'ac-plot'), wrap = el('div', 'ac-wrap');
     wrap.style.height = height(s) + 'px';
     const canvas = el('canvas', 'ac-canvas');
@@ -2417,7 +2706,7 @@ const Charts = (() => {
     tip.setAttribute('aria-hidden', 'true');
     wrap.append(canvas, tip);
     plot.appendChild(wrap);
-    box.append(plot, table);
+    box.append(plot, table, plain);
     const ptr = { x: null, y: null };
     canvas.addEventListener('pointermove', e => { const r = canvas.getBoundingClientRect(); ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top; });
     canvas.addEventListener('pointerleave', () => { ptr.x = null; tip.style.opacity = 0; });
@@ -2453,7 +2742,7 @@ const Charts = (() => {
   window.addEventListener('beforeprint', resizeAll);
   window.addEventListener('afterprint', resizeAll);
 
-  return { card, sweep, _read: read, _csv: csvOf, _png: png };
+  return { card, sweep, _read: read, _csv: csvOf, _png: png, _xlsx: xlsxOf, _color: itemColor };
 })();
 
 // --- traces --------------------------------------------------------------------------
