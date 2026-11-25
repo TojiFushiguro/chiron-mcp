@@ -1222,7 +1222,14 @@ Like a chart, the PDF holds nothing the answer does not, and it is made in the b
 integrity hashes, loads the first time someone presses Download PDF or Open, and the charts
 are drawn at print size by the same code as in the conversation. Under the title, the date;
 nothing at the top of a page; at the foot, the dataset on the left and the page number on
-the right. A heading stays with what follows it, a chart's caption with its chart, and a
+the right. The file is named after the report's title, whether saved with Download PDF or
+from the browser's PDF viewer after Open: Open hands the PDF to a small service worker
+(`webui/pdf-sw.js`, served at `pdf-sw.js`, scope `files/`) and shows it at
+`files/<id>/<title>.pdf`, because a viewer names a saved file after the address it shows and
+a `blob:` address ends in a random id. The worker keeps the last few PDFs in memory only,
+sends nothing anywhere, and says to press Open again for an address it no longer holds;
+without service workers, Open falls back to a `blob:` address. A heading stays with what
+follows it, a chart's caption with its chart, and a
 table of fifteen rows or fewer is never split (a longer one repeats its header on each page,
 and one over 1,000 rows is cut there, saying so). Arrows, check marks and emoji, which the
 PDF font lacks, become words or are left out. A block that is not valid JSON shows as a card

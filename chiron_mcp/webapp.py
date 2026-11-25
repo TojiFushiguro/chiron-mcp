@@ -288,16 +288,25 @@ Answering. The reader wants the figure, not an essay.
   chiron_open_in_ui, below): look up every figure first, as for any answer. Then write one
   or two sentences with the main figure and end with one fenced block tagged `report`
   holding JSON, which the page turns into a PDF:
-  {"title":"Type 2 diabetes in Synthea 10k",
+  {"title":"Type 2 diabetes by age group",
    "sections":[{"heading":"Patients","text":"686 of the 10,000 patients have it."},
     {"heading":"By age group","text":"Most are 50 to 79.","chart":{<a chart as above>}}]}
+  The title names what this request asked for, short and in the person's own words ("4
+  people from Cincinnati" for "a PDF about 4 people from Cincinnati"): not the cohort
+  behind it, and never the dataset's name, which the page prints on every page. A change
+  that alters what the report covers retitles it to match.
   Put in exactly what the person asked for and nothing else: one section for each thing
-  they asked about, in their order. A request that names nothing more ("a PDF report on
-  asthma") gets one section with the main count; the follow-ups offer parts to add. A
-  breakdown or a trend gets a chart; a list (patients, records) gets a table:
-  {"columns":[...],"rows":[[...]]}. Never add these on your own, only when the person's
-  words ask for them. In a section: the chart's own figures as a table ("table": true) or
-  a "callout" ({"value":"179","text":"started metformin"}). At the top level, beside
+  they asked about, in their order. "Make that a PDF" or "also a PDF" asks for what the
+  answer before it gave: its figures, chart and table; for a report just saved or a list
+  of patients, the patients one per row with that report's columns (run it with
+  chiron_run_saved_report or chiron_run_table). A request that names nothing more and
+  follows nothing ("a PDF report on asthma") gets one section with the main count; the
+  follow-ups offer parts to add. A breakdown or a trend gets a chart. A list (patients,
+  records) gets a table with every row written out from what your tools returned:
+  {"columns":["Birthdate","Gender","City"],"rows":[["1951-03-14","F","Toledo"]]};
+  "table": true is never a list, it only repeats a chart's own figures. Never add these on
+  your own, only when the person's words ask for them. In a section: a chart's figures as
+  a table ("table": true) or a "callout" ({"value":"179","text":"started metformin"}). At the top level, beside
   "title": "summary" (two or three sentences),
   "numbers" (up to 4 key figures: [{"value":"686","label":"patients"}]) or "about" (how it
   was counted: {"looked_up":[...],"counted":[...],"notes":[...]}).
@@ -483,16 +492,25 @@ Answering. The reader wants the figure, not an essay.
   chiron_open_in_ui, below): look up every figure first, as for any answer. Then write one
   or two sentences with the main figure and end with one fenced block tagged `report`
   holding JSON, which the page turns into a PDF:
-  {"title":"Type 2 diabetes in Synthea 10k",
+  {"title":"Type 2 diabetes by age group",
    "sections":[{"heading":"Patients","text":"686 of the 10,000 patients have it."},
     {"heading":"By age group","text":"Most are 50 to 79.","chart":{<a chart as above>}}]}
+  The title names what this request asked for, short and in the person's own words ("4
+  people from Cincinnati" for "a PDF about 4 people from Cincinnati"): not the cohort
+  behind it, and never the dataset's name, which the page prints on every page. A change
+  that alters what the report covers retitles it to match.
   Put in exactly what the person asked for and nothing else: one section for each thing
-  they asked about, in their order. A request that names nothing more ("a PDF report on
-  asthma") gets one section with the main count; the follow-ups offer parts to add. A
-  breakdown or a trend gets a chart; a list (patients, records) gets a table:
-  {"columns":[...],"rows":[[...]]}. Never add these on your own, only when the person's
-  words ask for them. In a section: the chart's own figures as a table ("table": true) or
-  a "callout" ({"value":"179","text":"started metformin"}). At the top level, beside
+  they asked about, in their order. "Make that a PDF" or "also a PDF" asks for what the
+  answer before it gave: its figures, chart and table; for a report just saved or a list
+  of patients, the patients one per row with that report's columns (run it with
+  chiron_run_saved_report or chiron_run_table). A request that names nothing more and
+  follows nothing ("a PDF report on asthma") gets one section with the main count; the
+  follow-ups offer parts to add. A breakdown or a trend gets a chart. A list (patients,
+  records) gets a table with every row written out from what your tools returned:
+  {"columns":["Birthdate","Gender","City"],"rows":[["1951-03-14","F","Toledo"]]};
+  "table": true is never a list, it only repeats a chart's own figures. Never add these on
+  your own, only when the person's words ask for them. In a section: a chart's figures as
+  a table ("table": true) or a "callout" ({"value":"179","text":"started metformin"}). At the top level, beside
   "title": "summary" (two or three sentences),
   "numbers" (up to 4 key figures: [{"value":"686","label":"patients"}]) or "about" (how it
   was counted: {"looked_up":[...],"counted":[...],"notes":[...]}).
@@ -2636,6 +2654,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if url.path in ("/", "/index.html"):
             return self._file(WEBUI / "index.html", "text/html; charset=utf-8")
+        if url.path == "/pdf-sw.js":
+            # the worker that shows a PDF report under its title (see webui/pdf-sw.js)
+            return self._file(WEBUI / "pdf-sw.js", "text/javascript; charset=utf-8")
         if url.path == "/health":
             return self._json({"ok": True, "identity": CONFIG.username or None,
                                "require_session": REQUIRE_SESSION})

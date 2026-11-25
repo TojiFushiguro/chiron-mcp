@@ -42,6 +42,9 @@
   if (!/\.ar-thumb \{/.test(style.textContent)) throw new Error('the report styles were not found in index.html');
   document.head.appendChild(style);
   window.DATASET = 'synthea-10k'; window.DATASET_NAME = 'Synthea 10k'; window.DATASET_LEVEL = 'deid';
+  // This page is not served by Ask, so it has no PDF worker (pdf-sw.js): Open takes its
+  // fallback, a blob: address. The worker itself is checked on the real page.
+  if (navigator.serviceWorker) navigator.serviceWorker.register = () => Promise.reject(new Error('no PDF worker on the test page'));
   window.el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const code = src.slice(src.indexOf('const ISO_DAY = '), src.indexOf('// --- traces'));
   const { Charts, Reports } = new Function(code + '\nreturn { Charts, Reports };')();
@@ -66,7 +69,7 @@
   const META = { question: 'Make me a PDF report on type 2 diabetes', at: Date.UTC(2026, 0, 15, 12), level: 'deid' };
   const DAY = 'Jan 15, 2026';
   const FULL = {
-    title: 'Type 2 diabetes in Synthea 10k',
+    title: 'Type 2 diabetes',
     summary: '**686** of the 10,000 patients (6.9%) have type 2 diabetes. Most are 50 to 79.',
     numbers: [{ value: '686', label: 'patients with type 2 diabetes' }, { value: 12345, label: 'encounters for it' },
               { value: '6.9%', label: 'of all patients' }, { value: '179', label: 'started metformin within 90 days' }],
@@ -85,7 +88,7 @@
   const CASES = [
     { name: 'full report', spec: FULL, meta: META, pages: [3, 4], images: 3, all: true,
       thumb: { charts: 3, tiles: 4, short: true },
-      has: ['Type 2 diabetes in Synthea 10k', 'In short. 686 of the 10,000 patients (6.9%) have type 2 diabetes.', '12,345', 'encounters for it', '6.9%',
+      has: ['Type 2 diabetes', 'In short. 686 of the 10,000 patients (6.9%) have type 2 diabetes.', '12,345', 'encounters for it', '6.9%',
             '1 Who has it', '2 New diagnoses over time', '3 Treatment', '4 By gender', '5 Other conditions', 'Hypertension', '60.1%', '43.9%',
             'started metformin within 90 days of diagnosis', 'Patients with type 2 diabetes by age group', 'Few are under 35.', '18-34', '236',
             'How it was counted', 'What Ask looked up', 'How old are they?', 'How patients were counted', 'Synthea is synthetic data.',
@@ -163,6 +166,11 @@
     { name: 'page breaks: tables first', spec: { title: 'Tables first', summary: 'Short tables right under their headings. ' + 'More words to push things down. '.repeat(30),
         sections: Array.from({ length: 6 }, (_, i) => ({ heading: `Table ${i + 1}`, table: { columns: ['Row', 'Value'], rows: Array.from({ length: 6 + i * 2 }, (_, k) => [`T${i + 1} row ${k + 1}`, k]) } })) },
       meta: META, pages: [2, 5] },
+    { name: 'a title that names the dataset drops it (it is at the foot of every page)', spec: { title: 'Type 2 diabetes patients on metformin living in Cincinnati, Synthea 10k', sections: [{ heading: 'Patients', text: 'Four.' }] },
+      meta: META, pages: [1, 1], title: 'Type 2 diabetes patients on metformin living in Cincinnati', has: ['Type 2 diabetes patients on metformin living in Cincinnati'], not: ['Cincinnati, Synthea'],
+      read: r => [['in the middle too', Reports._read({ title: 'Asthma patients in Synthea 10k by gender', summary: 's' }).title === 'Asthma patients by gender'],
+                  ['a title that is only the name stays', Reports._read({ title: 'Synthea 10k', summary: 's' }).title === 'Synthea 10k'],
+                  ['another dataset is not touched', Reports._read({ title: 'Patients in Synthea 100k', summary: 's' }).title === 'Patients in Synthea 100k']] },
     { name: 'extras nobody asked for are left out', spec: { title: 'Asthma by gender', summary: 'Twenty patients.', numbers: [{ value: '20', label: 'patients' }],
         about: { counted: ['Asthma, once per patient'] }, sections: [{ heading: 'By gender', text: '11 male and 9 female.', chart: GENDER, table: true, callout: { value: '11', text: 'are male' } }] },
       meta: { ...META, asked: 'Make a PDF of the asthma patients by gender' }, pages: [1, 1], images: 1, thumb: { charts: 1, tiles: 0, short: false },
@@ -389,7 +397,7 @@
   dl.click();
   await idle();
   const first = performance.now() - t0;
-  btnBox.add(downloads.length === 1 && downloads[0].name === 'Type 2 diabetes in Synthea 10k.pdf', 'Download PDF saves "' + (downloads[0] && downloads[0].name) + '"');
+  btnBox.add(downloads.length === 1 && downloads[0].name === 'Type 2 diabetes.pdf', 'Download PDF saves "' + (downloads[0] && downloads[0].name) + '"');
   btnBox.add(downloads[0] && downloads[0].href.startsWith('blob:'), 'from a blob');
   btnBox.add(err.hidden, 'the earlier error is cleared');
   t0 = performance.now();
@@ -409,7 +417,7 @@
   window.open = () => null;
   open.click();
   await idle();
-  btnBox.add(downloads.length === 3 && downloads[2].name === 'Type 2 diabetes in Synthea 10k.pdf', 'Open with the new tab blocked: the PDF is downloaded instead');
+  btnBox.add(downloads.length === 3 && downloads[2].name === 'Type 2 diabetes.pdf', 'Open with the new tab blocked: the PDF is downloaded instead');
   window.open = realOpen;
   const longBox = boxes[CASES.findIndex(c => c.name === 'a very long title')];
   longBox.card.querySelector('.ar-btns .chiron-link:not(.load)').click();

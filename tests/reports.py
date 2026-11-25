@@ -72,10 +72,14 @@ def main() -> int:
         check(f"{name} keeps patient lists to when asked", "patients one per row only when asked to" in " ".join(rule.split()))
         check(f"{name} keeps chart blocks out of a report's answer", "No separate chart" in rule)
         check(f"{name}: a bare request gets one section", "gets one section with the main count" in " ".join(rule.split()))
-        check(f"{name}: a list gets a table", "a list (patients, records) gets a table" in flat)
+        check(f"{name}: a list gets its rows written out", "A list (patients, records) gets a table with every row written out" in flat
+              and '"table": true is never a list' in flat)
+        check(f"{name}: 'make that a PDF' carries the answer before it, a saved report its rows",
+              "\"Make that a PDF\" or \"also a PDF\" asks for what the answer before it gave" in flat
+              and "the patients one per row with that report's columns" in flat and "follows nothing" in flat)
         check(f"{name}: saving a report in Chiron is not a PDF", "saving a report in Chiron is" in " ".join(rule.split()))
         check(f"{name}: follow-ups after a PDF offer parts to add", "After a PDF report, instead, each of the three starts with \"Add\"" in " ".join(sp.split()))
-        example = rule[rule.find("{"): rule.find("Put in exactly")].strip().replace("{<a chart as above>}", "{}")
+        example = rule[rule.find("{"): rule.find("The title names")].strip().replace("{<a chart as above>}", "{}")
         try:
             spec = json.loads(example)
             parsed = True
@@ -83,6 +87,9 @@ def main() -> int:
             spec, parsed = None, exc
         check(f"{name}: the example report is valid JSON (with a chart filled in)", parsed is True, parsed)
         check(f"{name}: the example has no extras", spec is not None and set(spec) == {"title", "sections"}, spec and list(spec))
+        check(f"{name}: the example's title has no dataset name", spec is not None and "Synthea" not in spec["title"], spec and spec.get("title"))
+        check(f"{name}: the title names what was asked, in the person's words", "The title names what this request asked for" in flat
+              and "own words" in flat and "never the dataset's name" in flat and "retitles it" in flat)
     check("the prompt in use is one of the two", webapp.SYSTEM_PROMPT in (webapp.SYSTEM_PROMPT_FULL, webapp.SYSTEM_PROMPT_SHORT))
 
     # The audit: a good report.
@@ -184,6 +191,23 @@ def main() -> int:
     prose = webapp.tidy(f"Open [the cohort]({base}/query/5) or {base}/query/6 here.")
     if webapp.CONFIG.ui_url:
         check("tidy still takes Chiron links out of prose", base not in prose, prose)
+
+    # Open shows a PDF through a service worker, so the viewer saves it under its title: the
+    # server serves the worker's script as JavaScript, from the page's own folder.
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), webapp.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/pdf-sw.js", timeout=10) as r:
+            body, ctype = r.read().decode(), r.headers.get("Content-Type", "")
+        check("the PDF worker is served as JavaScript", "javascript" in ctype and "self.addEventListener('fetch'" in body, ctype)
+        check("... it answers only for PDFs it was given, and keeps them in memory", "FILES.get(url.pathname)" in body and "caches" not in body)
+    finally:
+        srv.shutdown()
+    page = (webapp.WEBUI / "index.html").read_text()
+    check("the page registers the worker for files/ only", "register('pdf-sw.js', { scope: 'files/' })" in page)
 
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     return 1 if fails else 0

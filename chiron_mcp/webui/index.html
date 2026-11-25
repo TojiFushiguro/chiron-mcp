@@ -2875,6 +2875,19 @@ const Reports = (() => {
   const MAX_ROWS = 1000;    // a longer table is cut here, and the PDF says so
   // report text is plain text: HTML tags a model may write are dropped, never shown or run
   const str = v => (v == null ? '' : typeof v === 'object' ? '' : String(v)).replace(/<\/?[a-z!][^>]*>/gi, '').trim();
+  // The dataset is printed at the foot of every page, so a title that names it drops it:
+  // "Asthma by gender, Synthea 300" and "Asthma patients in Synthea 300 by gender" become
+  // "Asthma by gender" and "Asthma patients by gender" (a title that is only the name stays).
+  function withoutDataset(t) {
+    const ds = DATASET ? String(DATASET_NAME || '').trim() : '';
+    if (!t || !ds) return t;
+    const d = ds.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const cut = t.replace(new RegExp(`\\s*\\(${d}\\)`, 'gi'), '')
+      .replace(new RegExp(`\\s+(?:in|from|for|on|at|across)\\s+(?:the\\s+)?${d}(?:\\s+(?:dataset|data|database))?(?=[\\s,.;:)]|$)`, 'gi'), '')
+      .replace(new RegExp(`\\s*[,:;\u2013\u2014-]\\s*${d}\\s*$`, 'i'), '')
+      .replace(/\s{2,}/g, ' ').replace(/[\s,;:\u2013\u2014-]+$/, '').trim();
+    return cut || t;
+  }
   // a title, heading, label or table cell is plain text: markdown marks in it are dropped
   const bare = v => str(v).replace(/^#+\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]*)`/g, '$1').trim();
   const val = v => (typeof v === 'number' ? Charts._number(v) : bare(v));
@@ -2930,7 +2943,7 @@ const Reports = (() => {
     const abs = [spec.about, ...list(spec.sections).map(x => (obj(x) ? x.about : null))].filter(obj);
     const gather = key => [...new Set(abs.flatMap(a => items(a[key])))];
     const about = { looked_up: gather('looked_up'), counted: gather('counted'), notes: gather('notes') };
-    return { title: bare(spec.title) || 'Report', summary, numbers, sections,
+    return { title: withoutDataset(bare(spec.title)) || 'Report', summary, numbers, sections,
              about: allow('about') && (about.looked_up.length || about.counted.length || about.notes.length) ? about : null };
   }
 
@@ -2987,13 +3000,20 @@ const Reports = (() => {
              layout: { hLineWidth: () => 0.75, vLineWidth: () => 0.75, hLineColor: () => LINE, vLineColor: () => LINE,
                        paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 } };
   }
+  // A first column of long names (conditions, medications) takes the spare width and the
+  // numbers sit at the right; otherwise (dates, short codes) the columns share it evenly.
+  function widthsOf(tb) {
+    const n = tb.columns.length;
+    const longest = Math.max(String(tb.columns[0]).length, ...tb.rows.slice(0, 200).map(r => cell(r[0]).length));
+    return n <= 4 && longest > 24 ? tb.columns.map((_, j) => (j === 0 ? '*' : 'auto')) : tb.columns.map(() => '*');
+  }
   function tableBlock(tb) {
     const n = tb.columns.length, fs = n > 8 ? 7 : n > 5 ? 8 : 9;
     const right = tb.columns.map((_, j) => j > 0 && numeric(tb.rows, j));
     const head = tb.columns.map((c, j) => ({ text: c, bold: true, color: '#ffffff', fillColor: TEAL, alignment: right[j] ? 'right' : 'left' }));
     const body = tb.rows.map(r => r.map((v, j) => ({ text: cell(v), alignment: right[j] ? 'right' : 'left' })));
     return { fontSize: fs, color: INK2, margin: [0, 2, 0, 14],
-             table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: n > 4 ? tb.columns.map(() => '*') : tb.columns.map((_, j) => (j === 0 ? '*' : 'auto')), body: [head, ...body] },
+             table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: widthsOf(tb), body: [head, ...body] },
              layout: { fillColor: row => (row > 0 && row % 2 === 0 ? PANEL : null), hLineWidth: (i, node) => (i === 0 || i === 1 ? 0 : i === node.table.body.length ? 0.75 : 0.5),
                        vLineWidth: () => 0, hLineColor: () => LINE2, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4 } };
   }
@@ -3214,6 +3234,49 @@ const Reports = (() => {
     return pg;
   }
 
+  // Where Open shows a PDF. A browser's PDF viewer saves a file under the last part of the
+  // address it shows, and a blob: address ends in a random id; so the PDF goes to a worker
+  // (pdf-sw.js, scope files/) and is shown at files/<id>/<title>.pdf, all in the browser.
+  // Where there are no service workers, or the worker does not answer, a blob: address.
+  let worker = null;
+  function pdfWorker() {
+    if (!worker) {
+      worker = (async () => {
+        if (!('serviceWorker' in navigator) || !window.isSecureContext) return null;
+        const reg = await navigator.serviceWorker.register('pdf-sw.js', { scope: 'files/' });
+        const w = reg.active || reg.waiting || reg.installing;
+        if (!w || w.state === 'activated') return w || null;
+        return await new Promise(ok => {
+          const t = setTimeout(() => ok(reg.active || null), 5000);
+          w.addEventListener('statechange', () => {
+            if (w.state === 'activated') { clearTimeout(t); ok(w); }
+            else if (w.state === 'redundant') { clearTimeout(t); ok(null); }
+          });
+        });
+      })().catch(() => null);
+      worker.then(w => { if (!w) worker = null; });   // try again on the next Open
+    }
+    return worker;
+  }
+  async function viewUrl(blob, name) {
+    const w = await pdfWorker();
+    if (w) {
+      try {
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const href = new URL(`files/${id}/${encodeURIComponent(name)}`, location.href).href;
+        await new Promise((ok, fail) => {
+          const ch = new MessageChannel(), t = setTimeout(() => fail(new Error('the PDF worker did not answer')), 3000);
+          ch.port1.onmessage = () => { clearTimeout(t); ok(); };
+          w.postMessage({ type: 'pdf', path: new URL(href).pathname, blob }, [ch.port2]);
+        });
+        return href;
+      } catch (_) { /* below: a blob: address */ }
+    }
+    const url = URL.createObjectURL(blob);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+    return url;
+  }
+
   // One report: the first page in miniature, the title, Download PDF and Open.
   function card(spec, meta) {
     const box = el('figure', 'ar');
@@ -3257,11 +3320,8 @@ const Reports = (() => {
       busy(true); err.hidden = true;
       try {
         const blob = await make();
-        if (tab && !tab.closed) {
-          const url = URL.createObjectURL(blob);
-          tab.location.href = url;
-          setTimeout(() => URL.revokeObjectURL(url), 120000);
-        } else Charts._save(blob, fileName(r));
+        if (tab && !tab.closed) tab.location.href = await viewUrl(blob, fileName(r));
+        else Charts._save(blob, fileName(r));
       } catch (e) { if (tab) tab.close(); fail(e); } finally { busy(false); }
     };
     btns.append(dl, open);
